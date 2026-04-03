@@ -26,8 +26,10 @@ aidb-locator 让 AI agent 具备 Android UI 调试的基础能力：
 ## 安装
 
 ```bash
-pip install git+https://github.com/hgDendi/aidb-locator.git
+pip3 install git+https://github.com/hgDendi/aidb-locator.git
 ```
+
+> **注意：** 请使用 `pip3`，不要使用 `pip`。`pip` 可能指向 Python 2.7，不支持 `pyproject.toml` 构建。
 
 ### 前置条件
 
