@@ -21,7 +21,7 @@ AI-powered Android Debug Bridge — CLI & MCP Server for Android UI inspection a
 ## Install
 
 ```bash
-pip install aidb-locator
+pip install git+https://github.com/hgDendi/aidb-locator.git
 ```
 
 ### Prerequisites
