@@ -293,3 +293,150 @@ def serve(ctx):
     """Start the MCP Server (stdio transport)."""
     from aidb_locator.mcp_server import run_server
     run_server(device_serial=ctx.obj["device"])
+
+
+# --- Native ADB fallback commands (no SDK needed) ---
+
+
+def _get_native(device: str | None):
+    from aidb_locator.commands import NativeAdb
+    return NativeAdb(_get_adb(device))
+
+
+@main.command()
+@click.option("-o", "--output", "output_path", default=None, help="Output file path")
+@click.pass_context
+def screenshot(ctx, output_path):
+    """Take a full-screen screenshot (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        path = native.screenshot(output_path)
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"path": str(path)}))
+    else:
+        click.echo(f"Saved: {path}")
+
+
+@main.command()
+@click.argument("x", type=int)
+@click.argument("y", type=int)
+@click.pass_context
+def tap(ctx, x, y):
+    """Tap at screen coordinates (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        native.tap(x, y)
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"success": True, "x": x, "y": y}))
+    else:
+        click.echo(f"Tapped ({x}, {y})")
+
+
+@main.command()
+@click.argument("x1", type=int)
+@click.argument("y1", type=int)
+@click.argument("x2", type=int)
+@click.argument("y2", type=int)
+@click.option("--duration", "-t", default=300, help="Duration in ms")
+@click.pass_context
+def swipe(ctx, x1, y1, x2, y2, duration):
+    """Swipe from (x1,y1) to (x2,y2) (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        native.swipe(x1, y1, x2, y2, duration)
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"success": True}))
+    else:
+        click.echo(f"Swiped ({x1},{y1}) → ({x2},{y2})")
+
+
+@main.command("dump")
+@click.pass_context
+def dump_ui(ctx):
+    """Dump UI hierarchy via uiautomator (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        xml = native.dump_ui()
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    click.echo(xml)
+
+
+@main.command("top-activity")
+@click.pass_context
+def top_activity(ctx):
+    """Show the current top Activity (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        info = native.top_activity()
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps(info, indent=2))
+    else:
+        pkg = info.get("package", "?")
+        act = info.get("activity", "?")
+        click.echo(f"{pkg}/{act}")
+
+
+@main.command()
+@click.argument("text")
+@click.pass_context
+def input_text(ctx, text):
+    """Input text to focused field (ASCII only, no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        native.input_text(text)
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"success": True}))
+    else:
+        click.echo(f"Typed: {text}")
+
+
+@main.command()
+@click.argument("keycode")
+@click.pass_context
+def key(ctx, keycode):
+    """Send a key event (e.g., BACK, HOME, 4, 3) (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    key_map = {"BACK": 4, "HOME": 3, "ENTER": 66, "TAB": 61, "MENU": 82, "POWER": 26}
+    resolved = key_map.get(keycode.upper(), keycode)
+    try:
+        native.input_keyevent(resolved)
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"success": True, "keycode": resolved}))
+    else:
+        click.echo(f"Key: {keycode}")
+
+
+@main.command("screen-size")
+@click.pass_context
+def screen_size(ctx):
+    """Get screen resolution (no SDK needed)."""
+    native = _get_native(ctx.obj["device"])
+    try:
+        size = native.screen_size()
+    except AdbError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if ctx.obj["json"]:
+        click.echo(json.dumps(size))
+    else:
+        click.echo(f"{size['width']}x{size['height']}")

@@ -138,12 +138,100 @@ def _build_tools() -> list[Tool]:
                 "required": ["view_mem_addr", "data"],
             },
         ),
+        # --- Native ADB tools (no SDK needed) ---
+        Tool(
+            name="aidb_screenshot",
+            description="Take a full-screen screenshot (no CodeLocator SDK needed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="aidb_tap",
+            description="Tap at screen coordinates using native ADB input (no SDK needed, more reliable than mock_touch).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "description": "X coordinate"},
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+                "required": ["x", "y"],
+            },
+        ),
+        Tool(
+            name="aidb_swipe",
+            description="Swipe from one point to another (no SDK needed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "x1": {"type": "integer", "description": "Start X"},
+                    "y1": {"type": "integer", "description": "Start Y"},
+                    "x2": {"type": "integer", "description": "End X"},
+                    "y2": {"type": "integer", "description": "End Y"},
+                    "duration_ms": {"type": "integer", "description": "Duration in milliseconds (default 300)"},
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+                "required": ["x1", "y1", "x2", "y2"],
+            },
+        ),
+        Tool(
+            name="aidb_dump_ui",
+            description="Dump UI hierarchy as XML via uiautomator (no SDK needed). Provides accessibility-level View info.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="aidb_top_activity",
+            description="Get the current top Activity name (no SDK needed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="aidb_key",
+            description="Send a key event (e.g., BACK=4, HOME=3, ENTER=66) (no SDK needed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keycode": {"type": ["integer", "string"], "description": "Key code number or name (BACK, HOME, ENTER)"},
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+                "required": ["keycode"],
+            },
+        ),
+        Tool(
+            name="aidb_screen_size",
+            description="Get device screen resolution (no SDK needed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "description": "Device serial (optional)"},
+                },
+            },
+        ),
     ]
 
 
 def _make_locator(args: dict, default_serial: str | None = None) -> CodeLocator:
     serial = args.get("device") or default_serial
     return CodeLocator(AdbClient(device_serial=serial))
+
+
+def _make_native(args: dict, default_serial: str | None = None):
+    from aidb_locator.commands import NativeAdb
+    serial = args.get("device") or default_serial
+    return NativeAdb(AdbClient(device_serial=serial))
 
 
 def run_server(device_serial: str | None = None):
@@ -202,6 +290,49 @@ def run_server(device_serial: str | None = None):
             elif name == "aidb_set_view_data":
                 ok = locator.set_view_data(arguments["view_mem_addr"], arguments["data"])
                 return [TextContent(type="text", text=json.dumps({"success": ok}))]
+
+            # --- Native ADB tools ---
+            elif name == "aidb_screenshot":
+                native = _make_native(arguments, device_serial)
+                path = native.screenshot()
+                with open(path, "rb") as f:
+                    img_data = base64.b64encode(f.read()).decode("ascii")
+                return [ImageContent(type="image", data=img_data, mimeType="image/png")]
+
+            elif name == "aidb_tap":
+                native = _make_native(arguments, device_serial)
+                native.tap(arguments["x"], arguments["y"])
+                return [TextContent(type="text", text=json.dumps({"success": True, "x": arguments["x"], "y": arguments["y"]}))]
+
+            elif name == "aidb_swipe":
+                native = _make_native(arguments, device_serial)
+                duration = arguments.get("duration_ms", 300)
+                native.swipe(arguments["x1"], arguments["y1"], arguments["x2"], arguments["y2"], duration)
+                return [TextContent(type="text", text=json.dumps({"success": True}))]
+
+            elif name == "aidb_dump_ui":
+                native = _make_native(arguments, device_serial)
+                xml = native.dump_ui()
+                return [TextContent(type="text", text=xml)]
+
+            elif name == "aidb_top_activity":
+                native = _make_native(arguments, device_serial)
+                info = native.top_activity()
+                return [TextContent(type="text", text=json.dumps(info, indent=2))]
+
+            elif name == "aidb_key":
+                native = _make_native(arguments, device_serial)
+                keycode = arguments["keycode"]
+                key_map = {"BACK": 4, "HOME": 3, "ENTER": 66, "TAB": 61, "MENU": 82, "POWER": 26}
+                if isinstance(keycode, str):
+                    keycode = key_map.get(keycode.upper(), keycode)
+                native.input_keyevent(keycode)
+                return [TextContent(type="text", text=json.dumps({"success": True, "keycode": keycode}))]
+
+            elif name == "aidb_screen_size":
+                native = _make_native(arguments, device_serial)
+                size = native.screen_size()
+                return [TextContent(type="text", text=json.dumps(size))]
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]

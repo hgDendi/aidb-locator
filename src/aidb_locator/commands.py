@@ -143,3 +143,75 @@ class CodeLocator:
         operate_data = self._build_operate_data(view_mem_addr, EDIT_SET_DATA, data)
         response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: operate_data})
         return response.get("code", -1) == 0
+
+
+class NativeAdb:
+    """Native ADB commands that work without CodeLocator SDK."""
+
+    def __init__(self, adb: AdbClient):
+        self._adb = adb
+
+    def screenshot(self, output: str | Path | None = None) -> Path:
+        """Take a full-screen screenshot."""
+        remote = "/sdcard/aidb_screenshot.png"
+        self._adb.shell(f"screencap -p {remote}")
+        if output is None:
+            output = Path(tempfile.mktemp(suffix=".png"))
+        return self._adb.pull(remote, Path(output))
+
+    def tap(self, x: int, y: int) -> None:
+        """Tap at screen coordinates."""
+        self._adb.shell(f"input tap {x} {y}")
+
+    def swipe(self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> None:
+        """Swipe from (x1,y1) to (x2,y2)."""
+        self._adb.shell(f"input swipe {x1} {y1} {x2} {y2} {duration_ms}")
+
+    def input_text(self, text: str) -> None:
+        """Input text (ASCII only)."""
+        escaped = text.replace(" ", "%s").replace("&", "\\&").replace("<", "\\<").replace(">", "\\>")
+        self._adb.shell(f"input text '{escaped}'")
+
+    def input_keyevent(self, keycode: int | str) -> None:
+        """Send a key event (e.g., 3=HOME, 4=BACK, 24=VOLUME_UP)."""
+        self._adb.shell(f"input keyevent {keycode}")
+
+    def dump_ui(self) -> str:
+        """Dump UI hierarchy via uiautomator (no SDK needed)."""
+        remote = "/sdcard/aidb_uidump.xml"
+        self._adb.shell(f"uiautomator dump {remote}")
+        local = Path(tempfile.mktemp(suffix=".xml"))
+        self._adb.pull(remote, local)
+        return local.read_text(encoding="utf-8")
+
+    def top_activity(self) -> dict:
+        """Get the current top activity info."""
+        output = self._adb.shell("dumpsys activity top | head -5")
+        result: dict = {}
+        for line in output.strip().splitlines():
+            line = line.strip()
+            if "ACTIVITY" in line:
+                parts = line.split()
+                for p in parts:
+                    if "/" in p:
+                        pkg, act = p.split("/", 1)
+                        result["package"] = pkg
+                        result["activity"] = act
+                        break
+        return result
+
+    def open_deeplink(self, url: str) -> str:
+        """Open a deep link via am start."""
+        return self._adb.shell(
+            f"am start -a android.intent.action.VIEW -d '{url}'"
+        )
+
+    def screen_size(self) -> dict:
+        """Get screen resolution."""
+        output = self._adb.shell("wm size")
+        for line in output.strip().splitlines():
+            if "Physical size" in line or "Override size" in line:
+                size = line.split(":")[-1].strip()
+                w, h = size.split("x")
+                return {"width": int(w), "height": int(h)}
+        return {"width": 0, "height": 0}
