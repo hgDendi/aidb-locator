@@ -1,53 +1,102 @@
 # aidb-locator
 
-AI-powered Android Debug Bridge — CLI & MCP Server for Android UI inspection and manipulation.
+AI 驱动的 Android 调试桥 — 通过 CLI 和 MCP Server 实现 Android UI 检查与操控。
 
-> Built on the [CodeLocator](https://github.com/bytedance/CodeLocator) protocol by ByteDance. Licensed under Apache 2.0.
+[English](README_en.md)
 
-## Features
+> 基于 [CodeLocator](https://github.com/bytedance/CodeLocator) 协议构建，无需依赖 Android Studio。Apache 2.0 协议。
 
-- Grab full View hierarchy with Activity/Fragment info
-- Edit View properties in real-time (padding, margin, text, visibility, etc.)
-- Locate Views by touch coordinates
-- Simulate touch events
-- Send deep links (schemas)
-- Browse and operate on app files
-- Capture View screenshots
-- Get/set View-bound data
-- MCP Server for AI agent integration
+## 它能做什么
 
-## Install
+aidb-locator 让 AI agent 具备 Android UI 调试的基础能力：
+
+| 能力 | CLI 命令 | 说明 |
+|------|----------|------|
+| View 层级树 | `aidb layout` | 获取完整 View 树 + Activity/Fragment 信息 |
+| View 属性编辑 | `aidb edit` | 实时修改 padding、margin、文字、可见性等 |
+| 触摸定位 | `aidb touch` | 给定坐标，返回对应的 View |
+| 模拟点击 | `aidb click` | 在指定坐标触发点击事件 |
+| 深度链接 | `aidb schema` | 发送 Schema URL 跳转页面 |
+| 文件浏览 | `aidb files` | 获取应用文件系统目录树 |
+| 文件操作 | `aidb file-op` | 复制、移动、删除应用内文件 |
+| View 截图 | `aidb capture` | 获取单个 View 的渲染截图 |
+| 数据读取 | `aidb view-data` | 获取 View 绑定的数据 |
+| 数据设置 | `aidb view-data --set` | 设置 View 上的数据 |
+
+## 安装
 
 ```bash
 pip install aidb-locator
 ```
 
-## Prerequisites
+### 前置条件
 
-- Android device with CodeLocator SDK integrated (debug build)
-- `adb` available in PATH
+- Android 设备已集成 CodeLocator SDK（debug 包）
+- 系统 PATH 中包含 `adb`
 
-## CLI Usage
+## CLI 使用
 
 ```bash
-aidb devices                          # List connected devices
-aidb layout [--json]                  # View tree + Activity/Fragment info
-aidb touch 540 500                    # Find View at coordinates
-aidb click 540 500                    # Simulate tap
-aidb edit <view_id> T "Hello"         # Edit View text
-aidb schema "myapp://home"            # Send deep link
-aidb files                            # Browse app files
-aidb capture <view_id> -o shot.png    # Screenshot a View
-aidb view-data <view_id>              # Get View-bound data
+# 设备管理
+aidb devices                            # 列出已连接设备
+
+# UI 检查
+aidb layout                             # 查看 View 层级树
+aidb layout --json                      # JSON 格式输出
+aidb activity                           # 查看当前 Activity + Fragment
+aidb touch 540 960                      # 定位坐标 (540, 960) 的 View
+
+# UI 操控
+aidb click 540 960                      # 模拟点击
+aidb edit <view_addr> T "新文字"         # 修改 View 文字
+aidb edit <view_addr> P "16,8,16,8"     # 修改 padding
+aidb edit <view_addr> A "0.5"           # 修改透明度
+
+# 导航
+aidb schema "myapp://home"              # 发送深度链接
+
+# 文件
+aidb files                              # 浏览应用文件
+aidb file-op <source> <target> copy     # 文件操作
+
+# 截图 & 数据
+aidb capture <view_addr> -o shot.png    # View 截图
+aidb view-data <view_addr>              # 获取 View 数据
+aidb view-data <view_addr> --set "data" # 设置 View 数据
 ```
 
+### 全局选项
+
+| 选项 | 说明 |
+|------|------|
+| `--device`, `-d` | 指定设备序列号（多设备场景） |
+| `--json` | 以 JSON 格式输出 |
+
+### EditType 速查表
+
+| 代码 | 属性 | 示例 |
+|------|------|------|
+| `T` | 文字 | `aidb edit <addr> T "Hello"` |
+| `P` | Padding | `aidb edit <addr> P "16,8,16,8"` |
+| `M` | Margin | `aidb edit <addr> M "0,16,0,16"` |
+| `A` | 透明度 | `aidb edit <addr> A "0.5"` |
+| `B` | 背景色 | `aidb edit <addr> B "#FF0000"` |
+| `TC` | 文字颜色 | `aidb edit <addr> TC "#333333"` |
+| `TS` | 文字大小 | `aidb edit <addr> TS "16"` |
+| `VF` | 可见性 | `aidb edit <addr> VF "V/I/G"` |
+| `LP` | 宽高 | `aidb edit <addr> LP "200,100"` |
+| `TXY` | 位移 | `aidb edit <addr> TXY "10,20"` |
+| `SCXY` | 缩放 | `aidb edit <addr> SCXY "1.5,1.5"` |
+
 ## MCP Server
+
+启动 MCP Server，让 AI agent 直接调用：
 
 ```bash
 aidb serve
 ```
 
-Configure in Claude Code / Cursor:
+### 配置到 Claude Code / Cursor
 
 ```json
 {
@@ -60,8 +109,66 @@ Configure in Claude Code / Cursor:
 }
 ```
 
+### 可用的 MCP Tools
+
+| Tool | 说明 |
+|------|------|
+| `aidb_grab_layout` | 获取 View 层级树 + Activity/Fragment |
+| `aidb_edit_view` | 编辑 View 属性 |
+| `aidb_get_touch_view` | 坐标定位 View |
+| `aidb_mock_touch` | 模拟点击 |
+| `aidb_send_schema` | 发送深度链接 |
+| `aidb_list_files` | 文件目录树 |
+| `aidb_operate_file` | 文件操作 |
+| `aidb_capture_view` | View 截图（返回 PNG 图片） |
+| `aidb_get_view_data` | 获取 View 数据 |
+| `aidb_set_view_data` | 设置 View 数据 |
+
+## 架构
+
+```
+aidb_locator/
+├── adb.py          # ADB 通信层（subprocess 封装）
+├── protocol.py     # CodeLocator 协议（编码/解码/常量）
+├── models.py       # 数据模型（上游 JSON 字段映射）
+├── commands.py     # 10 项能力的高层 API
+├── cli.py          # Click CLI
+└── mcp_server.py   # MCP Server
+```
+
+依赖方向：`cli / mcp_server → commands → protocol → adb`
+
+## 工作原理
+
+aidb-locator 是 CodeLocator 协议的独立客户端，通过标准 ADB broadcast 与设备端 SDK 通信：
+
+```
+CLI / MCP Server
+    ↓ 调用
+CodeLocator (commands.py)
+    ↓ 编码参数
+Protocol (protocol.py)
+    ↓ 发送 broadcast
+ADB Client (adb.py)
+    ↓ adb shell am broadcast
+设备端 CodeLocator SDK
+    ↓ 返回结果
+JSON 解析 → 结构化输出
+```
+
+无需 Android Studio，任何能执行 `adb` 的环境都能使用。
+
+## 开发
+
+```bash
+git clone https://github.com/hgDendi/aidb-locator.git
+cd aidb-locator
+pip install -e .
+pytest tests/ -v
+```
+
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0 — 详见 [LICENSE](LICENSE)。
 
-This project is a CLI/MCP client for the [CodeLocator](https://github.com/bytedance/CodeLocator) protocol, originally developed by ByteDance.
+本项目是 [CodeLocator](https://github.com/bytedance/CodeLocator) 协议的 CLI/MCP 客户端，CodeLocator 由 ByteDance 开发。
