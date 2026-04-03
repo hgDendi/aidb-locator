@@ -64,9 +64,9 @@ class CodeLocator:
         return parse_application(response)
 
     def edit_view(self, view_mem_addr: str, edit_type: str, value: str) -> bool:
-        """Edit a View property by memory address."""
-        change_data = f"{view_mem_addr},{edit_type},{value}"
-        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: change_data})
+        """Edit a View property by memory address (hex identityHashCode)."""
+        operate_data = self._build_operate_data(view_mem_addr, edit_type, value)
+        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: operate_data})
         return response.get("code", -1) == 0
 
     def get_touch_view(self, x: int, y: int) -> WView:
@@ -75,7 +75,10 @@ class CodeLocator:
             ACTION_GET_TOUCH_VIEW,
             {KEY_MOCK_CLICK_X: str(x), KEY_MOCK_CLICK_Y: str(y)},
         )
-        return WView.from_dict(response.get("data", {}))
+        data = response.get("data", {})
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return WView.from_dict(data)
 
     def mock_touch(self, x: int, y: int) -> bool:
         """Simulate a touch event at the given coordinates."""
@@ -103,10 +106,20 @@ class CodeLocator:
         )
         return response.get("code", -1) == 0
 
+    def _build_operate_data(self, view_mem_addr: str, edit_type: str, args: str = "") -> str:
+        """Build OperateData JSON for change view actions."""
+        import json as _json
+        item_id = int(view_mem_addr, 16)
+        return _json.dumps({
+            "aa": "V",
+            "d4": item_id,
+            "d5": [{"d7": edit_type, "d8": args}],
+        })
+
     def capture_view(self, view_mem_addr: str, output: str | Path | None = None) -> Path:
         """Capture a View's rendered bitmap."""
-        change_data = f"{view_mem_addr},{EDIT_VIEW_BITMAP},"
-        self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: change_data})
+        operate_data = self._build_operate_data(view_mem_addr, EDIT_VIEW_BITMAP)
+        self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: operate_data})
 
         if output is None:
             output = Path(tempfile.mktemp(suffix=".png"))
@@ -115,8 +128,8 @@ class CodeLocator:
 
     def get_view_data(self, view_mem_addr: str) -> dict:
         """Get data bound to a View."""
-        change_data = f"{view_mem_addr},{EDIT_GET_DATA},"
-        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: change_data})
+        operate_data = self._build_operate_data(view_mem_addr, EDIT_GET_DATA)
+        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: operate_data})
         data = response.get("data", "")
         if isinstance(data, str):
             try:
@@ -127,6 +140,6 @@ class CodeLocator:
 
     def set_view_data(self, view_mem_addr: str, data: str) -> bool:
         """Set data on a View."""
-        change_data = f"{view_mem_addr},{EDIT_SET_DATA},{data}"
-        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: change_data})
+        operate_data = self._build_operate_data(view_mem_addr, EDIT_SET_DATA, data)
+        response = self._send(ACTION_CHANGE_VIEW, {KEY_CHANGE_VIEW: operate_data})
         return response.get("code", -1) == 0

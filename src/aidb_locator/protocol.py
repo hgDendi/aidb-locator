@@ -96,10 +96,10 @@ def decode_inline_result(raw: str) -> dict:
     if not match:
         raise ValueError(f"No inline data found in: {raw[:200]}")
     b64_data = match.group(1)
-    # SDK may omit base64 padding — fix length to be multiple of 4
+    # SDK uses URL-safe Base64 (- and _ instead of + and /) and may omit padding
     b64_data += "=" * (-len(b64_data) % 4)
-    compressed = base64.b64decode(b64_data)
-    json_bytes = zlib.decompress(compressed)
+    compressed = base64.urlsafe_b64decode(b64_data)
+    json_bytes = zlib.decompress(compressed, zlib.MAX_WBITS | 32)
     return json.loads(json_bytes)
 
 
@@ -108,8 +108,8 @@ def decode_file_result(file_content: bytes) -> dict:
     if isinstance(file_content, bytes):
         file_content = file_content.decode("ascii", errors="ignore")
     file_content += "=" * (-len(file_content) % 4)
-    compressed = base64.b64decode(file_content)
-    json_bytes = zlib.decompress(compressed)
+    compressed = base64.urlsafe_b64decode(file_content)
+    json_bytes = zlib.decompress(compressed, zlib.MAX_WBITS | 32)
     return json.loads(json_bytes)
 
 
