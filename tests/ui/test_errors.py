@@ -48,3 +48,27 @@ def test_device_offline_returns_409(client, monkeypatch):
     resp = client.get("/api/devices")
     assert resp.status_code == 409
     assert resp.json()["error"] == "no_device"
+
+
+def test_unauthorized_device_returns_409(client, monkeypatch):
+    def boom(self):
+        raise AdbError("error: device unauthorized. Please check the confirmation dialog.")
+    monkeypatch.setattr(
+        "aidb_locator.ui.api.devices.AdbClient.list_devices",
+        boom,
+    )
+    resp = client.get("/api/devices")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "no_device"
+
+
+def test_adb_missing_returns_500(client, monkeypatch):
+    def boom(self):
+        raise AdbError("adb not found. Make sure Android SDK platform-tools is in your PATH.")
+    monkeypatch.setattr(
+        "aidb_locator.ui.api.devices.AdbClient.list_devices",
+        boom,
+    )
+    resp = client.get("/api/devices")
+    assert resp.status_code == 500
+    assert resp.json()["error"] == "adb_missing"

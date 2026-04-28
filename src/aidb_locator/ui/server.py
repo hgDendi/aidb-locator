@@ -55,6 +55,13 @@ def main(host: str, port: int, no_browser: bool) -> None:
     chosen = _pick_port(host, port if port else 8765)
     url = f"http://{host}:{chosen}"
     click.echo(f"aidb-ui listening on {url}")
+    if host not in ("127.0.0.1", "localhost"):
+        click.secho(
+            f"WARNING: bound to {host}; anyone on your network can drive the device. "
+            "Use --host 127.0.0.1 to restrict to localhost.",
+            fg="yellow",
+            err=True,
+        )
     if not no_browser:
         _open_browser_when_ready(url)
     uvicorn.run(build_app(), host=host, port=chosen, log_level="info")

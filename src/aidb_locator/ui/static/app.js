@@ -63,6 +63,7 @@ const TreeNode = defineComponent({
 });
 
 // ----- View details / edit form -----
+// type: 'box4' → 4 number inputs (l,t,r,b); 'box2' → 2 inputs (x,y or w,h)
 const EDIT_FIELDS = [
   { code: 'T',    label: '文字',     type: 'text',   from: n => n.text || '' },
   { code: 'P',    label: 'Padding',  type: 'box4',   from: n => (n.padding || [0,0,0,0]).join(',') },
@@ -72,7 +73,25 @@ const EDIT_FIELDS = [
   { code: 'TC',   label: '文字色',   type: 'color',  from: n => n.text_color || '#000000' },
   { code: 'TS',   label: '文字大小', type: 'number', from: n => String(n.text_size || 0) },
   { code: 'VF',   label: '可见性',   type: 'visibility', from: n => n.visibility || 'V' },
+  { code: 'LP',   label: '宽高',     type: 'box2',   from: n => `${(n.bounds?.right ?? 0) - (n.bounds?.left ?? 0)},${(n.bounds?.bottom ?? 0) - (n.bounds?.top ?? 0)}` },
+  { code: 'TXY',  label: '位移',     type: 'box2',   from: () => '0,0' },
+  { code: 'SCXY', label: '缩放',     type: 'box2',   from: () => '1,1' },
 ];
+
+function renderBoxN(values, n, onUpdate) {
+  const parts = String(values || '').split(',').concat(['0','0','0','0']).slice(0, n);
+  return h('div', { class: 'flex gap-1 flex-1' },
+    parts.map((p, i) => h('input', {
+      type: 'number',
+      value: p,
+      onInput: e => {
+        const next = [...parts]; next[i] = e.target.value;
+        onUpdate(next.join(','));
+      },
+      class: 'w-12 border rounded px-1 text-xs',
+    }))
+  );
+}
 
 const ViewDetails = defineComponent({
   name: 'view-details',
@@ -151,6 +170,10 @@ const ViewDetails = defineComponent({
                   value: editValues[f.code],
                   onInput: e => editValues[f.code] = e.target.value,
                   class: 'flex-1' })
+              : f.type === 'box4'
+              ? renderBoxN(editValues[f.code], 4, v => editValues[f.code] = v)
+              : f.type === 'box2'
+              ? renderBoxN(editValues[f.code], 2, v => editValues[f.code] = v)
               : h('input', { type: f.type === 'number' ? 'number' : 'text',
                   value: editValues[f.code],
                   onInput: e => editValues[f.code] = e.target.value,
