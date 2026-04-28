@@ -377,18 +377,22 @@ const ViewDetails = defineComponent({
                   onInput: e => editValues[f.code] = e.target.value,
                   class: 'flex-1 border rounded px-1 text-xs' }),
             f.unit ? h('span', { class: 'text-[10px] text-gray-500 w-5 text-center' }, f.unit) : null,
-            // Buttons appear conditionally: 应用 only when dirty, 撤销 only after
-            // a successful apply; both can show if user re-edits after applying.
-            isDirty(f.code)
-              ? h('button', { class: 'bg-blue-600 text-white px-2 py-1 rounded text-xs',
-                              title: `从 \`${effectiveValue(f.code)}\` 改为 \`${editValues[f.code]}\``,
-                              onClick: () => applyEdit(f.code) }, '应用')
-              : null,
-            wasApplied(f.code)
-              ? h('button', { class: 'bg-orange-500 text-white px-2 py-1 rounded text-xs',
-                              title: `还原成最初的 \`${baseline[f.code]}\``,
-                              onClick: () => undoEdit(f.code) }, '撤销')
-              : null,
+            // Buttons always render to keep row layout stable; hidden via
+            // `invisible` class when not applicable so they reserve space.
+            h('button', {
+              class: ['px-2 py-1 rounded text-xs w-12 shrink-0',
+                      isDirty(f.code) ? 'bg-blue-600 text-white' : 'invisible'],
+              title: isDirty(f.code) ? `从 \`${effectiveValue(f.code)}\` 改为 \`${editValues[f.code]}\`` : '',
+              disabled: !isDirty(f.code),
+              onClick: () => applyEdit(f.code),
+            }, '应用'),
+            h('button', {
+              class: ['px-2 py-1 rounded text-xs w-12 shrink-0',
+                      wasApplied(f.code) ? 'bg-orange-500 text-white' : 'invisible'],
+              title: wasApplied(f.code) ? `还原成最初的 \`${baseline[f.code]}\`` : '',
+              disabled: !wasApplied(f.code),
+              onClick: () => undoEdit(f.code),
+            }, '撤销'),
           ])),
         ]),
         hasAnyApplied.value
@@ -430,12 +434,46 @@ createApp({
     let baseScale = 1;        // fit-to-container scale before user zoom
     const zoom = ref(1);      // user zoom factor (pinch / ctrl+wheel)
 
-    // Resizable columns
-    const leftW = ref(288);   // matches old w-72
-    const rightW = ref(320);  // matches old w-80
+    // Resizable columns — once the user drags a splitter, autoFit stops touching widths.
+    const leftW = ref(288);
+    const rightW = ref(320);
+    const userResized = ref(false);
+
+    function autoFitColumns() {
+      if (userResized.value) return;
+      const winW = window.innerWidth;
+      const maxSide = Math.floor(winW / 3);
+      const minSide = 200;
+
+      // Right: width sufficient for the longest "size:" line ≈ 50 chars
+      const ds = snapshot.value?.device_size;
+      const den = snapshot.value?.density || 0;
+      const sample = ds && den > 0
+        ? `size: ${ds.width}×${ds.height} px (${(ds.width/den).toFixed(4)} × ${(ds.height/den).toFixed(4)} dp)`
+        : 'size: 1216×2688 px (374.1538 × 827.0769 dp)';
+      rightW.value = Math.min(maxSide, Math.max(minSide, Math.ceil(sample.length * 7 + 32)));
+
+      // Left: walk tree, compute longest rendered row in px (mono ~7.2 px/char + indent + arrow)
+      let maxRow = minSide;
+      const root = snapshot.value?.layout;
+      if (root) {
+        const walk = (n, depth) => {
+          const fqn = n.class_name || '';
+          const dot = fqn.lastIndexOf('.');
+          const short = dot >= 0 ? fqn.slice(dot + 1) : fqn;
+          const label = `${short}${n.id_str ? '#' + n.id_str : ''}`;
+          const px = label.length * 7.2 + depth * 12 + 36;
+          if (px > maxRow) maxRow = px;
+          for (const c of n.children || []) walk(c, depth + 1);
+        };
+        walk(root, 0);
+      }
+      leftW.value = Math.min(maxSide, Math.max(minSide, Math.ceil(maxRow)));
+    }
 
     function startResize(which, e) {
       e.preventDefault();
+      userResized.value = true;
       const startX = e.clientX;
       const startLW = leftW.value;
       const startRW = rightW.value;
@@ -504,6 +542,7 @@ createApp({
         // Try to keep focus on the same view by mem_addr; falls back to null
         // if the view was destroyed/recreated and now has a different addr.
         selected.value = prevAddr ? findByMemAddr(snapshot.value?.layout, prevAddr) : null;
+        autoFitColumns();
         await nextTick();
         renderImage();
       } catch (e) {
@@ -741,7 +780,7 @@ createApp({
       a.click();
     }
 
-    onMounted(loadDevices);
+    onMounted(refresh);   // auto-fetch snapshot on page load
 
     return {
       devices, device, snapshot, selected, search, error, loading,
