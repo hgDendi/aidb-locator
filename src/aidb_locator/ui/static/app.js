@@ -445,12 +445,18 @@ createApp({
       const canvas = canvasRef.value;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(imageEl.value, 0, 0, canvas.width, canvas.height);
-      // hover
+      const density = snapshot.value?.density || 0;
+      // hover (red dashed)
       if (hover.value) drawBox(ctx, hover.value, 'rgba(220,38,38,0.9)', true);
       // selected: padding/margin fills then bounding box
       if (selected.value) {
         drawPaddingMargin(ctx, selected.value);
         drawBox(ctx, selected.value, 'rgba(37,99,235,0.95)', false);
+      }
+      // distance measurements between selected and hover (if different)
+      if (selected.value && hover.value &&
+          selected.value.mem_addr !== hover.value.mem_addr) {
+        drawDistances(ctx, selected.value, hover.value, density);
       }
     }
 
@@ -486,6 +492,105 @@ createApp({
       ctx.strokeRect(b.left * scale, b.top * scale,
                      (b.right - b.left) * scale, (b.bottom - b.top) * scale);
       ctx.restore();
+    }
+
+    function _expandedBounds(n) {
+      const b = n.bounds;
+      const [ml, mt, mr, mb] = n.margin || [0,0,0,0];
+      return { left: b.left - ml, top: b.top - mt, right: b.right + mr, bottom: b.bottom + mb };
+    }
+    function _rectContains(outer, inner) {
+      return outer.left <= inner.left && outer.top <= inner.top
+          && outer.right >= inner.right && outer.bottom >= inner.bottom;
+    }
+    function _fmtDist(px, density) {
+      if (density > 0) return `${px}·${(px/density).toFixed(1)}dp`;
+      return `${px}px`;
+    }
+    function _drawMeasureLine(ctx, x1, y1, x2, y2, label, color) {
+      const s = scale;
+      const sx1 = x1 * s, sy1 = y1 * s, sx2 = x2 * s, sy2 = y2 * s;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      // Line itself, dashed
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Tick caps at both endpoints (perpendicular to the line)
+      const isHorizontal = Math.abs(sy1 - sy2) < 0.5;
+      const tick = 4;
+      ctx.beginPath();
+      if (isHorizontal) {
+        ctx.moveTo(sx1, sy1 - tick); ctx.lineTo(sx1, sy1 + tick);
+        ctx.moveTo(sx2, sy2 - tick); ctx.lineTo(sx2, sy2 + tick);
+      } else {
+        ctx.moveTo(sx1 - tick, sy1); ctx.lineTo(sx1 + tick, sy1);
+        ctx.moveTo(sx2 - tick, sy2); ctx.lineTo(sx2 + tick, sy2);
+      }
+      ctx.stroke();
+      // Label pill at midpoint
+      const mx = (sx1 + sx2) / 2;
+      const my = (sy1 + sy2) / 2;
+      ctx.font = '11px -apple-system, system-ui, sans-serif';
+      const pad = 4;
+      const w = ctx.measureText(label).width + pad * 2;
+      const lh = 16;
+      ctx.fillStyle = color;
+      ctx.fillRect(mx - w/2, my - lh/2, w, lh);
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, mx, my);
+      ctx.restore();
+    }
+    function drawDistances(ctx, sel, hov, density) {
+      const a = _expandedBounds(sel);
+      const b = _expandedBounds(hov);
+      const color = 'rgba(236,72,153,0.95)'; // pink-500: contrasts with red+blue
+      const aContainsB = _rectContains(a, b);
+      const bContainsA = _rectContains(b, a);
+
+      if (aContainsB || bContainsA) {
+        // Nested: 4 inset distances from inner to outer (Figma style)
+        const inner = aContainsB ? b : a;
+        const outer = aContainsB ? a : b;
+        const cx = (inner.left + inner.right) / 2;
+        const cy = (inner.top + inner.bottom) / 2;
+        const top = inner.top - outer.top;
+        const bot = outer.bottom - inner.bottom;
+        const lft = inner.left - outer.left;
+        const rgt = outer.right - inner.right;
+        if (top > 0) _drawMeasureLine(ctx, cx, outer.top,    cx, inner.top,    _fmtDist(top, density), color);
+        if (bot > 0) _drawMeasureLine(ctx, cx, inner.bottom, cx, outer.bottom, _fmtDist(bot, density), color);
+        if (lft > 0) _drawMeasureLine(ctx, outer.left,  cy, inner.left,  cy, _fmtDist(lft, density), color);
+        if (rgt > 0) _drawMeasureLine(ctx, inner.right, cy, outer.right, cy, _fmtDist(rgt, density), color);
+        return;
+      }
+
+      // Disjoint: gap on whichever axis they don't overlap
+      // Vertical
+      let v = null;
+      if (b.top >= a.bottom)      v = { y1: a.bottom, y2: b.top, gap: b.top - a.bottom };
+      else if (a.top >= b.bottom) v = { y1: b.bottom, y2: a.top, gap: a.top - b.bottom };
+      if (v) {
+        const ovL = Math.max(a.left, b.left);
+        const ovR = Math.min(a.right, b.right);
+        const cx = ovR > ovL ? (ovL + ovR) / 2 : (a.left + a.right) / 2;
+        _drawMeasureLine(ctx, cx, v.y1, cx, v.y2, _fmtDist(v.gap, density), color);
+      }
+      // Horizontal
+      let h_ = null;
+      if (b.left >= a.right)      h_ = { x1: a.right, x2: b.left, gap: b.left - a.right };
+      else if (a.left >= b.right) h_ = { x1: b.right, x2: a.left, gap: a.left - b.right };
+      if (h_) {
+        const ovT = Math.max(a.top, b.top);
+        const ovB = Math.min(a.bottom, b.bottom);
+        const cy = ovB > ovT ? (ovT + ovB) / 2 : (a.top + a.bottom) / 2;
+        _drawMeasureLine(ctx, h_.x1, cy, h_.x2, cy, _fmtDist(h_.gap, density), color);
+      }
     }
 
     let lastMove = 0;
