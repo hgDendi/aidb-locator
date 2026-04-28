@@ -179,7 +179,7 @@ function renderBoxN(values, n, onUpdate) {
         const next = [...parts]; next[i] = e.target.value;
         onUpdate(next.join(','));
       },
-      class: 'w-12 border rounded px-1 text-xs',
+      class: 'w-16 border rounded px-1 text-xs',
     }))
   );
 }
