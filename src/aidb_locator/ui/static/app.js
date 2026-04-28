@@ -82,6 +82,27 @@ const EDIT_FIELDS = [
   { code: 'SCXY', label: '缩放',     type: 'box2',   from: () => '1,1' },
 ];
 
+// ----- Tree walking helpers -----
+function findAncestors(root, addr, chain = []) {
+  if (!root || !addr) return null;
+  const here = [...chain, root];
+  if (root.mem_addr === addr) return here;
+  for (const c of root.children || []) {
+    const r = findAncestors(c, addr, here);
+    if (r) return r;
+  }
+  return null;
+}
+function findByMemAddr(root, addr) {
+  if (!root || !addr) return null;
+  if (root.mem_addr === addr) return root;
+  for (const c of root.children || []) {
+    const r = findByMemAddr(c, addr);
+    if (r) return r;
+  }
+  return null;
+}
+
 // ----- Color helpers (parse/format #AARRGGBB; native picker is RGB-only) -----
 function parseColor(s) {
   const m = String(s || '').match(/^#?([0-9a-fA-F]{8}|[0-9a-fA-F]{6})$/);
@@ -104,28 +125,21 @@ function formatColor(a, r, g, b) {
 }
 function renderColor(value, onUpdate) {
   const c = parseColor(value);
+  const argbHex = formatColor(c.a, c.r, c.g, c.b).toUpperCase();   // #AARRGGBB
   const rgbHex = `#${[c.r, c.g, c.b].map(n => n.toString(16).padStart(2,'0')).join('')}`;
-  const channelInput = (label, key, val) => h('div', { class: 'flex items-center gap-0.5' }, [
-    h('span', { class: 'text-[10px] text-gray-500' }, label),
-    h('input', { type: 'number', min: 0, max: 255, value: val,
-      onInput: e => {
-        const nv = Math.max(0, Math.min(255, +e.target.value || 0));
-        const next = { ...c, [key]: nv };
-        onUpdate(formatColor(next.a, next.r, next.g, next.b));
-      },
-      class: 'w-10 border rounded px-1 text-xs' }),
-  ]);
-  return h('div', { class: 'flex-1 flex items-center gap-1 flex-wrap' }, [
+  return h('div', { class: 'flex-1 flex items-center gap-1' }, [
     h('input', { type: 'color', value: rgbHex,
       onInput: e => {
         const v = e.target.value;
         onUpdate(formatColor(c.a, parseInt(v.slice(1,3),16), parseInt(v.slice(3,5),16), parseInt(v.slice(5,7),16)));
       },
       class: 'w-8 h-6 shrink-0 border rounded' }),
-    channelInput('A', 'a', c.a),
-    channelInput('R', 'r', c.r),
-    channelInput('G', 'g', c.g),
-    channelInput('B', 'b', c.b),
+    h('input', { type: 'text', value: argbHex,
+      onChange: e => {
+        const p = parseColor(e.target.value);
+        onUpdate(formatColor(p.a, p.r, p.g, p.b));
+      },
+      class: 'flex-1 border rounded px-1 text-xs font-mono uppercase' }),
   ]);
 }
 
@@ -146,7 +160,7 @@ function renderBoxN(values, n, onUpdate) {
 
 const ViewDetails = defineComponent({
   name: 'view-details',
-  props: ['node', 'device', 'density'],
+  props: ['node', 'device', 'snapshot'],
   emits: ['edit-applied', 'error'],
   setup(props, { emit }) {
     const editValues = reactive({});
@@ -156,6 +170,56 @@ const ViewDetails = defineComponent({
     }, { immediate: true });
 
     const copy = (text) => navigator.clipboard.writeText(text).catch(() => {});
+
+    function buildElementReport() {
+      const n = props.node;
+      const b = n.bounds || {};
+      const w = (b.right || 0) - (b.left || 0);
+      const ht = (b.bottom || 0) - (b.top || 0);
+      const snap = props.snapshot || {};
+      const d = snap.density || 0;
+      const sizeStr = d > 0 ? `${w}×${ht} px (${(w/d).toFixed(4)}×${(ht/d).toFixed(4)} dp)` : `${w}×${ht} px`;
+      const ancestors = findAncestors(snap.layout, n.mem_addr) || [n];
+      const chain = ancestors.slice(0, -1);
+
+      const lines = [
+        '# UI Element',
+        '',
+        `class: ${n.class_name}`,
+        n.id_str ? `id: ${n.id_str}` : null,
+        `bounds: ${b.left},${b.top} → ${b.right},${b.bottom}`,
+        `size: ${sizeStr}`,
+        n.text ? `text: ${JSON.stringify(n.text)}` : null,
+        `mem_addr: ${n.mem_addr ?? ''}`,
+        `visibility: ${n.visibility ?? 'V'}`,
+        `clickable: ${!!n.is_clickable}`,
+        `alpha: ${n.alpha ?? 1}`,
+        `background_color: ${n.background_color || 'null'}`,
+        `text_color: ${n.text_color || 'null'}`,
+        `text_size: ${n.text_size || 0}`,
+        `padding [l,t,r,b]: ${(n.padding || [0,0,0,0]).join(',')}`,
+        `margin  [l,t,r,b]: ${(n.margin  || [0,0,0,0]).join(',')}`,
+        '',
+        '## Hierarchy (root → selected)',
+        ...chain.map((a, i) => `${'  '.repeat(i)}${a.class_name}${a.id_str ? '#' + a.id_str : ''}`),
+        `${'  '.repeat(chain.length)}${n.class_name}${n.id_str ? '#' + n.id_str : ''}  ← selected`,
+      ];
+
+      const act = snap.activity;
+      if (act && (act.activity || act.fragments?.length)) {
+        lines.push('', '## Activity');
+        if (act.activity) lines.push(`activity: ${act.activity}`);
+        if (act.package)  lines.push(`package: ${act.package}`);
+        if (act.fragments?.length) lines.push(`fragments: ${act.fragments.join(' > ')}`);
+      }
+      const ds = snap.device_size;
+      if (ds && (ds.width || ds.height)) {
+        lines.push('', '## Device');
+        lines.push(`screen: ${ds.width}×${ds.height} px @ density ${d}`);
+      }
+
+      return lines.filter(l => l !== null).join('\n');
+    }
 
     async function applyEdit(code) {
       try {
@@ -190,11 +254,10 @@ const ViewDetails = defineComponent({
       const b = n.bounds || {};
       const w = (b.right || 0) - (b.left || 0);
       const ht = (b.bottom || 0) - (b.top || 0);
-      const d = props.density || 0;
+      const d = props.snapshot?.density || 0;
       const sizeStr = d > 0
         ? `${w}×${ht} px (${(w / d).toFixed(4)} × ${(ht / d).toFixed(4)} dp)`
         : `${w.toFixed(4)}×${ht.toFixed(4)}`;
-      const path = (n.class_name || '') + (n.id_str ? `#${n.id_str}` : '');
       return h('div', { class: 'p-3 text-sm space-y-3' }, [
         h('div', { class: 'space-y-1' }, [
           h('div', null, [h('b', null, 'class: '), n.class_name]),
@@ -205,9 +268,11 @@ const ViewDetails = defineComponent({
           n.mem_addr ? h('div', null, [h('b', null, 'mem_addr: '), n.mem_addr]) : null,
         ]),
         h('div', { class: 'flex gap-2 flex-wrap' }, [
-          h('button', { class: 'bg-gray-200 px-2 py-1 rounded text-xs', onClick: () => copy(n.id_str || '') }, '📋 复制 id'),
-          h('button', { class: 'bg-gray-200 px-2 py-1 rounded text-xs', onClick: () => copy(path) }, '📋 复制路径'),
-          h('button', { class: 'bg-gray-200 px-2 py-1 rounded text-xs', onClick: () => copy(`${b.left},${b.top},${b.right},${b.bottom}`) }, '📋 复制坐标'),
+          h('button', {
+            class: 'bg-blue-600 text-white px-3 py-1 rounded text-xs',
+            onClick: () => copy(buildElementReport()),
+            title: '把节点详情、层级、Activity / Fragment 拷到剪贴板，方便丢给 AI',
+          }, '📋 Copy element'),
         ]),
         h('hr'),
         h('div', { class: 'space-y-2' }, [
@@ -261,9 +326,51 @@ createApp({
     const loading = ref(false);
     const schemaInput = ref('');
     const canvasRef = ref(null);
+    const canvasWrapRef = ref(null);
     const hover = ref(null);
     const imageEl = ref(null);
-    let scale = 1;
+    let scale = 1;            // effective canvas → device pixel ratio
+    let baseScale = 1;        // fit-to-container scale before user zoom
+    const zoom = ref(1);      // user zoom factor (pinch / ctrl+wheel)
+
+    // Resizable columns
+    const leftW = ref(288);   // matches old w-72
+    const rightW = ref(320);  // matches old w-80
+
+    function startResize(which, e) {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startLW = leftW.value;
+      const startRW = rightW.value;
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        if (which === 'left')  leftW.value  = Math.max(160, Math.min(600, startLW + dx));
+        else                   rightW.value = Math.max(220, Math.min(700, startRW - dx));
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    function onCanvasWheel(e) {
+      // macOS trackpad pinch fires wheel events with ctrlKey=true
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 0.9 : 1.111;
+        zoom.value = Math.max(0.2, Math.min(8, zoom.value * factor));
+        renderImage();
+      }
+      // else: native two-finger scroll handles pan inside overflow-auto section
+    }
+
+    function resetZoom() { zoom.value = 1; renderImage(); }
 
     // True when a snapshot has been loaded AND it contains a real layout tree
     // (not the empty WApplication that grab_layout() returns when no SDK responds).
@@ -293,10 +400,13 @@ createApp({
       }
       loading.value = true;
       error.value = null;
+      const prevAddr = selected.value?.mem_addr;
       try {
         const url = '/api/snapshot' + (device.value ? `?device=${encodeURIComponent(device.value)}` : '');
         snapshot.value = await fetchJson(url);
-        selected.value = null;
+        // Try to keep focus on the same view by mem_addr; falls back to null
+        // if the view was destroyed/recreated and now has a different addr.
+        selected.value = prevAddr ? findByMemAddr(snapshot.value?.layout, prevAddr) : null;
         await nextTick();
         renderImage();
       } catch (e) {
@@ -310,17 +420,24 @@ createApp({
       if (!snapshot.value || !canvasRef.value) return;
       const canvas = canvasRef.value;
       const ctx = canvas.getContext('2d');
-      const img = new Image();
-      img.onload = () => {
-        const maxW = 480;
-        scale = Math.min(1, maxW / img.naturalWidth);
-        canvas.width = img.naturalWidth * scale;
-        canvas.height = img.naturalHeight * scale;
+      const draw = (img) => {
+        const containerW = canvasWrapRef.value?.clientWidth || 600;
+        baseScale = Math.min(1, containerW / img.naturalWidth);
+        scale = baseScale * zoom.value;
+        canvas.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         imageEl.value = img;
         drawOverlays();
       };
-      img.src = 'data:image/png;base64,' + snapshot.value.screenshot_png_b64;
+      if (imageEl.value && imageEl.value.src.endsWith(snapshot.value.screenshot_png_b64.slice(-32))) {
+        // Same screenshot data — reuse decoded image (avoids flicker on zoom)
+        draw(imageEl.value);
+      } else {
+        const img = new Image();
+        img.onload = () => draw(img);
+        img.src = 'data:image/png;base64,' + snapshot.value.screenshot_png_b64;
+      }
     }
 
     function drawOverlays() {
@@ -426,9 +543,11 @@ createApp({
 
     return {
       devices, device, snapshot, selected, search, error, loading,
-      schemaInput, canvasRef, hover, hasLayout,
-      refresh, onCanvasMove, onCanvasLeave, onCanvasClick,
+      schemaInput, canvasRef, canvasWrapRef, hover, hasLayout,
+      leftW, rightW, zoom,
+      refresh, onCanvasMove, onCanvasLeave, onCanvasClick, onCanvasWheel,
       onPickFromTree, sendSchema, exportLayoutJson,
+      startResize, resetZoom,
     };
   },
 }).mount('#app');

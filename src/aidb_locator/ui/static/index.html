@@ -34,10 +34,10 @@
       {{ error }} <button class="underline ml-2" @click="error=null">关闭</button>
     </div>
 
-    <!-- Main 3-column -->
+    <!-- Main 3-column with draggable splitters -->
     <main class="flex flex-1 min-h-0">
       <!-- Left: tree -->
-      <aside class="w-72 border-r bg-white flex flex-col">
+      <aside :style="{ width: leftW + 'px' }" class="border-r bg-white flex flex-col shrink-0">
         <input v-model="search" placeholder="🔍 搜索 view (id/class/text)"
                class="m-2 px-2 py-1 border rounded text-sm" />
         <div class="flex-1 overflow-auto px-2 pb-2 text-xs font-mono">
@@ -49,20 +49,30 @@
                      @pick="onPickFromTree"></tree-node>
         </div>
       </aside>
+      <div class="splitter" @mousedown="startResize('left', $event)" title="拖动调整左栏宽度"></div>
 
-      <!-- Center: canvas -->
-      <section class="flex-1 flex items-center justify-center bg-gray-100 overflow-auto">
-        <canvas ref="canvasRef" class="screenshot border bg-white shadow"
-                @mousemove="onCanvasMove" @mouseleave="onCanvasLeave"
-                @click="onCanvasClick"></canvas>
+      <!-- Center: canvas (overflow-auto = pan via 2-finger scroll; ctrl+wheel = pinch zoom) -->
+      <section ref="canvasWrapRef"
+               class="flex-1 relative bg-gray-100 overflow-auto"
+               @wheel="onCanvasWheel">
+        <div class="min-h-full flex items-start justify-center p-4">
+          <canvas ref="canvasRef" class="screenshot border bg-white shadow"
+                  @mousemove="onCanvasMove" @mouseleave="onCanvasLeave"
+                  @click="onCanvasClick"></canvas>
+        </div>
+        <div class="absolute top-2 right-2 bg-white/80 border rounded px-2 py-0.5 text-xs flex items-center gap-2">
+          <span>🔍 {{ Math.round(zoom * 100) }}%</span>
+          <button @click="resetZoom" class="text-blue-600 hover:underline" title="还原 100%">⟲</button>
+        </div>
       </section>
+      <div class="splitter" @mousedown="startResize('right', $event)" title="拖动调整右栏宽度"></div>
 
       <!-- Right: details -->
-      <aside class="w-80 border-l bg-white overflow-auto">
+      <aside :style="{ width: rightW + 'px' }" class="border-l bg-white overflow-auto shrink-0">
         <view-details v-if="selected"
                       :node="selected"
                       :device="device"
-                      :density="snapshot?.density"
+                      :snapshot="snapshot"
                       @edit-applied="refresh"
                       @error="msg => error = msg"></view-details>
         <div v-else-if="snapshot && !hasLayout" class="p-4 text-sm text-orange-800 bg-orange-50 border-l-4 border-orange-400">
