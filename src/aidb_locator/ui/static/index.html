@@ -46,7 +46,7 @@
                      :selected="selected"
                      :search="search"
                      :path="[]"
-                     @pick="onPickFromTree" />
+                     @pick="onPickFromTree"></tree-node>
         </div>
       </aside>
 
@@ -63,7 +63,7 @@
                       :node="selected"
                       :device="device"
                       @edit-applied="refresh"
-                      @error="msg => error = msg" />
+                      @error="msg => error = msg"></view-details>
         <div v-else class="p-4 text-sm text-gray-500">
           点击截图或左侧树选中一个 View 查看详情。
         </div>
