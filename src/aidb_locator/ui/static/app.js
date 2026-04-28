@@ -35,6 +35,28 @@ const TreeNode = defineComponent({
       props.selected && props.selected.mem_addr && props.selected.mem_addr === props.node.mem_addr
     );
 
+    // True if THIS node or any descendant matches selected — used to auto-
+    // expand collapsed ancestors so the selected row is actually rendered
+    // (otherwise scrollIntoView has nothing to scroll to).
+    const hasSelectedDescendant = computed(() => {
+      const sel = props.selected;
+      if (!sel?.mem_addr) return false;
+      const walk = (n) => {
+        if (n.mem_addr === sel.mem_addr) return true;
+        return (n.children || []).some(walk);
+      };
+      return walk(props.node);
+    });
+
+    watch(hasSelectedDescendant, (v) => { if (v) expanded.value = true; });
+
+    const rowRef = ref(null);
+    watch(isSelected, async (val) => {
+      if (!val) return;
+      await nextTick();
+      rowRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, { immediate: true });
+
     return () => {
       if (!visible.value) return null;
       const fqn = props.node.class_name || '';
@@ -44,6 +66,7 @@ const TreeNode = defineComponent({
       const children = props.node.children || [];
       return h('div', { class: ['tree-node', { selected: isSelected.value }] }, [
         h('div', {
+          ref: rowRef,
           class: 'tree-row',
           title: fqn,  // hover tooltip shows the full FQN
           onClick: () => emit('pick', props.node, [...props.path]),
