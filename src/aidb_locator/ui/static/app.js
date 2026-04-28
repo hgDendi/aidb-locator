@@ -209,6 +209,10 @@ createApp({
     const imageEl = ref(null);
     let scale = 1;
 
+    // True when a snapshot has been loaded AND it contains a real layout tree
+    // (not the empty WApplication that grab_layout() returns when no SDK responds).
+    const hasLayout = computed(() => !!snapshot.value?.layout?.class_name);
+
     async function fetchJson(url, init) {
       const r = await fetch(url, init);
       if (!r.ok) {
@@ -340,7 +344,7 @@ createApp({
 
     return {
       devices, device, snapshot, selected, search, error, loading,
-      schemaInput, canvasRef, hover,
+      schemaInput, canvasRef, hover, hasLayout,
       refresh, onCanvasMove, onCanvasLeave, onCanvasClick,
       onPickFromTree, sendSchema, exportLayoutJson,
     };

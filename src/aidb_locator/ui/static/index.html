@@ -64,6 +64,14 @@
                       :device="device"
                       @edit-applied="refresh"
                       @error="msg => error = msg"></view-details>
+        <div v-else-if="snapshot && !hasLayout" class="p-4 text-sm text-orange-800 bg-orange-50 border-l-4 border-orange-400">
+          ⚠️ <b>请安装集成 CodeLocator SDK 的 debug 包</b><br><br>
+          当前前台 app 未响应 CodeLocator 广播，可能原因：<br>
+          • 装的是 release 包（非 debuggable）<br>
+          • debug 包未集成 CodeLocator SDK<br>
+          • 当前页面不是你的 app（比如系统设置、桌面）<br><br>
+          <span class="text-gray-600">截图功能仍可用；view 树、属性、编辑、Schema 跳转都依赖 SDK。</span>
+        </div>
         <div v-else class="p-4 text-sm text-gray-500">
           点击截图或左侧树选中一个 View 查看详情。
         </div>
