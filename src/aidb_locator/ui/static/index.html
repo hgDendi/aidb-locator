@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aidb-locator UI</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div id="app" class="flex flex-col h-screen">
+    <!-- Top bar -->
+    <header class="flex items-center gap-4 px-4 py-2 bg-white border-b">
+      <select v-model="device" class="border rounded px-2 py-1 text-sm" @change="refresh">
+        <option v-for="d in devices" :key="d.serial" :value="d.serial">
+          {{ d.serial }} ({{ d.state }})
+        </option>
+        <option v-if="devices.length === 0" :value="null">(no device)</option>
+      </select>
+      <div class="flex-1 text-sm">
+        <div><b>Activity:</b> {{ snapshot?.activity?.activity || '—' }}</div>
+        <div class="text-gray-500"><b>Fragments:</b> {{ snapshot?.activity?.fragments?.join(' › ') || '—' }}</div>
+      </div>
+      <button @click="refresh" :disabled="loading"
+              class="bg-blue-600 text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+        {{ loading ? '加载中…' : '🔄 刷新' }}
+      </button>
+    </header>
+
+    <!-- Error banner -->
+    <div v-if="error" class="bg-red-100 text-red-800 text-sm px-4 py-2 border-b border-red-200">
+      {{ error }} <button class="underline ml-2" @click="error=null">关闭</button>
+    </div>
+
+    <!-- Main 3-column -->
+    <main class="flex flex-1 min-h-0">
+      <!-- Left: tree -->
+      <aside class="w-72 border-r bg-white flex flex-col">
+        <input v-model="search" placeholder="🔍 搜索 view (id/class/text)"
+               class="m-2 px-2 py-1 border rounded text-sm" />
+        <div class="flex-1 overflow-auto px-2 pb-2 text-xs font-mono">
+          <tree-node v-if="snapshot?.layout"
+                     :node="snapshot.layout"
+                     :selected="selected"
+                     :search="search"
+                     :path="[]"
+                     @pick="onPickFromTree" />
+        </div>
+      </aside>
+
+      <!-- Center: canvas -->
+      <section class="flex-1 flex items-center justify-center bg-gray-100 overflow-auto">
+        <canvas ref="canvasRef" class="screenshot border bg-white shadow"
+                @mousemove="onCanvasMove" @mouseleave="onCanvasLeave"
+                @click="onCanvasClick"></canvas>
+      </section>
+
+      <!-- Right: details -->
+      <aside class="w-80 border-l bg-white overflow-auto">
+        <view-details v-if="selected"
+                      :node="selected"
+                      :device="device"
+                      @edit-applied="refresh"
+                      @error="msg => error = msg" />
+        <div v-else class="p-4 text-sm text-gray-500">
+          点击截图或左侧树选中一个 View 查看详情。
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom bar -->
+    <footer class="flex items-center gap-2 px-4 py-2 bg-white border-t text-sm">
+      <span>Schema:</span>
+      <input v-model="schemaInput" placeholder="myapp://home"
+             class="flex-1 px-2 py-1 border rounded" />
+      <button @click="sendSchema" class="bg-blue-600 text-white px-3 py-1 rounded">🚀 跳转</button>
+      <button @click="exportLayoutJson" class="bg-gray-200 px-3 py-1 rounded">📥 导出 JSON</button>
+    </footer>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
