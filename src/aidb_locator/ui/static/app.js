@@ -189,13 +189,39 @@ const ViewDetails = defineComponent({
   props: ['node', 'device', 'snapshot'],
   emits: ['edit-applied', 'error'],
   setup(props, { emit }) {
-    const editValues = reactive({});
+    const editValues = reactive({});      // current input values per field code
+    const baseline   = reactive({});      // value at the moment the node was first selected
+    const appliedValue = reactive({});    // last value successfully applied (per field) — drives 撤销 button + change report
+    const lastAddr = ref(null);
 
+    // When a *different* node is selected, capture baseline + reset applied.
+    // When the *same* node is refreshed (post-edit), only refresh editValues for
+    // fields the user hasn't applied (so unapplied dirty input is preserved).
     watch(() => props.node, (n) => {
-      for (const f of EDIT_FIELDS) editValues[f.code] = f.from(n);
+      if (!n) return;
+      const switched = lastAddr.value !== n.mem_addr;
+      lastAddr.value = n.mem_addr;
+      if (switched) {
+        for (const k of Object.keys(baseline))     delete baseline[k];
+        for (const k of Object.keys(appliedValue)) delete appliedValue[k];
+      }
+      for (const f of EDIT_FIELDS) {
+        const v = f.from(n);
+        if (switched) baseline[f.code] = v;
+        if (appliedValue[f.code] === undefined) editValues[f.code] = v;
+      }
     }, { immediate: true });
 
     const copy = (text) => navigator.clipboard.writeText(text).catch(() => {});
+
+    // What the device most recently has for this field (per our knowledge):
+    // last applied value if any, otherwise the baseline.
+    const effectiveValue = (code) =>
+      appliedValue[code] !== undefined ? appliedValue[code] : baseline[code];
+    const isDirty = (code) => editValues[code] !== effectiveValue(code);
+    const wasApplied = (code) => appliedValue[code] !== undefined;
+    const hasAnyApplied = computed(() =>
+      EDIT_FIELDS.some(f => appliedValue[f.code] !== undefined));
 
     function buildElementReport() {
       const n = props.node;
@@ -247,26 +273,48 @@ const ViewDetails = defineComponent({
       return lines.filter(l => l !== null).join('\n');
     }
 
+    async function _send(code, value) {
+      const url = '/api/edit' + (props.device ? `?device=${encodeURIComponent(props.device)}` : '');
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ view_addr: props.node.mem_addr, edit_type: code, value }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${r.status}`);
+      }
+    }
+
     async function applyEdit(code) {
       try {
-        const url = '/api/edit' + (props.device ? `?device=${encodeURIComponent(props.device)}` : '');
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            view_addr: props.node.mem_addr,
-            edit_type: code,
-            value: editValues[code],
-          }),
-        });
-        if (!r.ok) {
-          const body = await r.json().catch(() => ({}));
-          throw new Error(body.message || `HTTP ${r.status}`);
-        }
+        await _send(code, editValues[code]);
+        appliedValue[code] = editValues[code];   // remember for 撤销 + 改动报告
         emit('edit-applied');
       } catch (e) {
         emit('error', `编辑失败: ${e.message}`);
       }
+    }
+
+    async function undoEdit(code) {
+      try {
+        await _send(code, baseline[code]);
+        delete appliedValue[code];
+        editValues[code] = baseline[code];
+        emit('edit-applied');
+      } catch (e) {
+        emit('error', `撤销失败: ${e.message}`);
+      }
+    }
+
+    function buildChangesReport() {
+      const lines = ['# Changes Applied', ''];
+      for (const f of EDIT_FIELDS) {
+        if (appliedValue[f.code] === undefined) continue;
+        lines.push(`- ${f.label} (${f.code}): \`${baseline[f.code]}\` → \`${appliedValue[f.code]}\``);
+      }
+      lines.push('', buildElementReport());
+      return lines.join('\n');
     }
 
     function exportViewPng() {
@@ -329,10 +377,29 @@ const ViewDetails = defineComponent({
                   onInput: e => editValues[f.code] = e.target.value,
                   class: 'flex-1 border rounded px-1 text-xs' }),
             f.unit ? h('span', { class: 'text-[10px] text-gray-500 w-5 text-center' }, f.unit) : null,
-            h('button', { class: 'bg-blue-600 text-white px-2 py-1 rounded text-xs',
-                          onClick: () => applyEdit(f.code) }, '应用'),
+            // Buttons appear conditionally: 应用 only when dirty, 撤销 only after
+            // a successful apply; both can show if user re-edits after applying.
+            isDirty(f.code)
+              ? h('button', { class: 'bg-blue-600 text-white px-2 py-1 rounded text-xs',
+                              title: `从 \`${effectiveValue(f.code)}\` 改为 \`${editValues[f.code]}\``,
+                              onClick: () => applyEdit(f.code) }, '应用')
+              : null,
+            wasApplied(f.code)
+              ? h('button', { class: 'bg-orange-500 text-white px-2 py-1 rounded text-xs',
+                              title: `还原成最初的 \`${baseline[f.code]}\``,
+                              onClick: () => undoEdit(f.code) }, '撤销')
+              : null,
           ])),
         ]),
+        hasAnyApplied.value
+          ? h('div', { class: 'pt-2 border-t border-orange-200' }, [
+              h('button', {
+                class: 'bg-orange-600 text-white px-3 py-1 rounded text-xs',
+                onClick: () => copy(buildChangesReport()),
+                title: '把所有 applied 改动 + element 信息一起拷贝（可直接给 AI）',
+              }, '📋 copy 改动'),
+            ])
+          : null,
         h('hr'),
         n.mem_addr
           ? h('button', { class: 'bg-gray-200 px-3 py-1 rounded text-xs',
