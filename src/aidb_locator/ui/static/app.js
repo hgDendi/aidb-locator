@@ -68,17 +68,20 @@ const TreeNode = defineComponent({
 
 // ----- View details / edit form -----
 // type: 'box4' → 4 number inputs (l,t,r,b); 'box2' → 2 inputs (x,y or w,h)
+// unit: shown after the input(s); CodeLocator returns dimensional fields in px,
+// so values are always px. Android source convention uses dp/sp; users can
+// mentally convert via the device density shown in the device size badge.
 const EDIT_FIELDS = [
   { code: 'T',    label: '文字',     type: 'text',   from: n => n.text || '' },
-  { code: 'P',    label: 'Padding',  type: 'box4',   from: n => (n.padding || [0,0,0,0]).join(',') },
-  { code: 'M',    label: 'Margin',   type: 'box4',   from: n => (n.margin  || [0,0,0,0]).join(',') },
+  { code: 'P',    label: 'Padding',  type: 'box4',   unit: 'px', from: n => (n.padding || [0,0,0,0]).join(',') },
+  { code: 'M',    label: 'Margin',   type: 'box4',   unit: 'px', from: n => (n.margin  || [0,0,0,0]).join(',') },
   { code: 'A',    label: '透明度',   type: 'alpha',  from: n => String(n.alpha ?? 1) },
   { code: 'B',    label: '背景色',   type: 'color',  from: n => n.background_color || '#ffffff' },
   { code: 'TC',   label: '文字色',   type: 'color',  from: n => n.text_color || '#000000' },
-  { code: 'TS',   label: '文字大小', type: 'number', from: n => String(n.text_size || 0) },
+  { code: 'TS',   label: '文字大小', type: 'number', unit: 'px', from: n => String(n.text_size || 0) },
   { code: 'VF',   label: '可见性',   type: 'visibility', from: n => n.visibility || 'V' },
-  { code: 'LP',   label: '宽高',     type: 'box2',   from: n => `${(n.bounds?.right ?? 0) - (n.bounds?.left ?? 0)},${(n.bounds?.bottom ?? 0) - (n.bounds?.top ?? 0)}` },
-  { code: 'TXY',  label: '位移',     type: 'box2',   from: () => '0,0' },
+  { code: 'LP',   label: '宽高',     type: 'box2',   unit: 'px', from: n => `${(n.bounds?.right ?? 0) - (n.bounds?.left ?? 0)},${(n.bounds?.bottom ?? 0) - (n.bounds?.top ?? 0)}` },
+  { code: 'TXY',  label: '位移',     type: 'box2',   unit: 'px', from: () => '0,0' },
   { code: 'SCXY', label: '缩放',     type: 'box2',   from: () => '1,1' },
 ];
 
@@ -302,6 +305,7 @@ const ViewDetails = defineComponent({
                   value: editValues[f.code],
                   onInput: e => editValues[f.code] = e.target.value,
                   class: 'flex-1 border rounded px-1 text-xs' }),
+            f.unit ? h('span', { class: 'text-[10px] text-gray-500 w-5 text-center' }, f.unit) : null,
             h('button', { class: 'bg-blue-600 text-white px-2 py-1 rounded text-xs',
                           onClick: () => applyEdit(f.code) }, '应用'),
           ])),
