@@ -90,6 +90,23 @@ aidb view-data <view_addr> --set "data" # 设置 View 数据
 | `TXY` | 位移 | `aidb edit <addr> TXY "10,20"` |
 | `SCXY` | 缩放 | `aidb edit <addr> SCXY "1.5,1.5"` |
 
+## Web UI（本地浏览器）
+
+```bash
+aidb-ui                         # 启动本地服务，自动打开浏览器
+aidb-ui --port 8888             # 指定端口
+aidb-ui --no-browser            # 只起服务不开浏览器
+```
+
+功能：
+
+- 三栏布局：左侧 view 树 + 中间设备截图 + 右侧属性 / 编辑面板
+- 点击截图任意位置 → 拉出对应 view（鼠标悬停红框预览，点击蓝框选中）
+- 左侧搜索框按 id / class / text 过滤
+- 右侧编辑面板可改 padding / margin / 文字 / 颜色 / 可见性 / 透明度等，所见即所得
+- 顶部多设备切换；底部 Schema 跳转 + 导出 layout JSON / 单 view 截图
+- 手动 🔄 刷新（不做轮询，避免污染设备状态）
+
 ## MCP Server
 
 启动 MCP Server，让 AI agent 直接调用：
