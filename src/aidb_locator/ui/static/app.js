@@ -284,8 +284,11 @@ const ViewDetails = defineComponent({
               : f.type === 'visibility'
               ? h('select', { value: editValues[f.code],
                   onChange: e => editValues[f.code] = e.target.value,
-                  class: 'flex-1 border rounded px-1 text-xs' },
-                  ['V','I','G'].map(o => h('option', { value: o }, o)))
+                  class: 'flex-1 border rounded px-1 text-xs' }, [
+                  h('option', { value: 'V' }, 'Visible'),
+                  h('option', { value: 'I' }, 'Invisible'),
+                  h('option', { value: 'G' }, 'Gone'),
+                ])
               : f.type === 'alpha'
               ? h('input', { type: 'range', min: 0, max: 1, step: 0.01,
                   value: editValues[f.code],
@@ -504,7 +507,7 @@ createApp({
           && outer.right >= inner.right && outer.bottom >= inner.bottom;
     }
     function _fmtDist(px, density) {
-      if (density > 0) return `${px}·${(px/density).toFixed(1)}dp`;
+      if (density > 0) return `${px}px / ${(px/density).toFixed(1)}dp`;
       return `${px}px`;
     }
     function _drawMeasureLine(ctx, x1, y1, x2, y2, label, color) {
