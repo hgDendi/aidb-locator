@@ -11,15 +11,21 @@ from aidb_locator.models import (
 
 
 def _fake_app() -> WApplication:
+    # Bounds in WView are parent-relative — DecorView at (0,0,1080,2340).
+    # Container is at parent-relative (0, 100, 1080, 1000) → absolute (0, 100, 1080, 1000).
+    # TextView is parent-relative (50, 80, 350, 160) inside container →
+    #   absolute (0+50, 100+80, 0+350, 100+160) = (50, 180, 350, 260).
     root = WView(class_name="DecorView", left=0, top=0, right=1080, bottom=2340)
+    container = WView(class_name="FrameLayout", left=0, top=100, right=1080, bottom=1000)
     child = WView(
         class_name="TextView",
         id_str="tv_title",
         text="hello",
-        left=100, top=200, right=400, bottom=280,
+        left=50, top=80, right=350, bottom=160,
         mem_addr="abc123",
     )
-    root.children.append(child)
+    container.children.append(child)
+    root.children.append(container)
     return WApplication(
         package_name="com.example",
         activity=WActivity(
@@ -57,7 +63,16 @@ def test_snapshot_returns_screenshot_layout_activity(client, monkeypatch, tmp_pa
     assert body["activity"]["activity"] == "HomeActivity"
     assert body["activity"]["fragments"] == ["HomeFragment"]
     assert body["layout"]["class_name"] == "DecorView"
-    assert body["layout"]["children"][0]["id_str"] == "tv_title"
+    assert body["density"] == 2.75
+
+    container = body["layout"]["children"][0]
+    assert container["class_name"] == "FrameLayout"
+    assert container["bounds"] == {"left": 0, "top": 100, "right": 1080, "bottom": 1000}
+
+    text = container["children"][0]
+    assert text["id_str"] == "tv_title"
+    # absolute = parent_abs (0,100) + relative (50,80,350,160) = (50,180,350,260)
+    assert text["bounds"] == {"left": 50, "top": 180, "right": 350, "bottom": 260}
     assert body["schemas"] == ["demo://home"]
 
 

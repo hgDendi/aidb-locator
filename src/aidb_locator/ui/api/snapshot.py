@@ -16,15 +16,24 @@ from aidb_locator.ui.deps import make_codelocator, make_native
 router = APIRouter()
 
 
-def _view_to_full_dict(v: WView) -> dict:
-    """Serialize WView with everything the UI needs (richer than to_dict())."""
+def _view_to_full_dict(v: WView, parent_abs_left: int = 0, parent_abs_top: int = 0) -> dict:
+    """Serialize WView with absolute bounds (CodeLocator returns parent-relative).
+
+    `v.left/right/top/bottom` are `view.getLeft/Right/Top/Bottom()` — relative
+    to the immediate parent. Walking the tree and accumulating gives the screen-
+    absolute rectangle the UI needs for hit-testing.
+    """
+    abs_left = parent_abs_left + v.left
+    abs_top = parent_abs_top + v.top
+    abs_right = parent_abs_left + v.right
+    abs_bottom = parent_abs_top + v.bottom
     return {
         "class_name": v.class_name,
         "visibility": v.visibility,
         "id_str": v.id_str,
         "mem_addr": v.mem_addr,
         "text": v.text,
-        "bounds": {"left": v.left, "top": v.top, "right": v.right, "bottom": v.bottom},
+        "bounds": {"left": abs_left, "top": abs_top, "right": abs_right, "bottom": abs_bottom},
         "padding": [v.padding_left, v.padding_top, v.padding_right, v.padding_bottom],
         "margin": [v.margin_left, v.margin_top, v.margin_right, v.margin_bottom],
         "alpha": v.alpha,
@@ -32,7 +41,7 @@ def _view_to_full_dict(v: WView) -> dict:
         "text_color": v.text_color,
         "text_size": v.text_size,
         "is_clickable": v.is_clickable,
-        "children": [_view_to_full_dict(c) for c in v.children],
+        "children": [_view_to_full_dict(c, abs_left, abs_top) for c in v.children],
     }
 
 
@@ -62,6 +71,7 @@ async def snapshot(device: str | None = Query(default=None)) -> dict:
     return {
         "screenshot_png_b64": base64.b64encode(png_bytes).decode("ascii"),
         "device_size": {"width": app.screen_width, "height": app.screen_height},
+        "density": app.density,
         "activity": _activity_block(app),
         "layout": _view_to_full_dict(root) if root else None,
         "schemas": [s.schema for s in app.schemas],

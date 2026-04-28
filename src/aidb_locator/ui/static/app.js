@@ -78,6 +78,53 @@ const EDIT_FIELDS = [
   { code: 'SCXY', label: '缩放',     type: 'box2',   from: () => '1,1' },
 ];
 
+// ----- Color helpers (parse/format #AARRGGBB; native picker is RGB-only) -----
+function parseColor(s) {
+  const m = String(s || '').match(/^#?([0-9a-fA-F]{8}|[0-9a-fA-F]{6})$/);
+  if (!m) return { a: 255, r: 0, g: 0, b: 0 };
+  const hex = m[1];
+  if (hex.length === 6) {
+    return { a: 255,
+             r: parseInt(hex.slice(0,2), 16),
+             g: parseInt(hex.slice(2,4), 16),
+             b: parseInt(hex.slice(4,6), 16) };
+  }
+  return { a: parseInt(hex.slice(0,2), 16),
+           r: parseInt(hex.slice(2,4), 16),
+           g: parseInt(hex.slice(4,6), 16),
+           b: parseInt(hex.slice(6,8), 16) };
+}
+function formatColor(a, r, g, b) {
+  const hh = n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${hh(a)}${hh(r)}${hh(g)}${hh(b)}`;
+}
+function renderColor(value, onUpdate) {
+  const c = parseColor(value);
+  const rgbHex = `#${[c.r, c.g, c.b].map(n => n.toString(16).padStart(2,'0')).join('')}`;
+  const channelInput = (label, key, val) => h('div', { class: 'flex items-center gap-0.5' }, [
+    h('span', { class: 'text-[10px] text-gray-500' }, label),
+    h('input', { type: 'number', min: 0, max: 255, value: val,
+      onInput: e => {
+        const nv = Math.max(0, Math.min(255, +e.target.value || 0));
+        const next = { ...c, [key]: nv };
+        onUpdate(formatColor(next.a, next.r, next.g, next.b));
+      },
+      class: 'w-10 border rounded px-1 text-xs' }),
+  ]);
+  return h('div', { class: 'flex-1 flex items-center gap-1 flex-wrap' }, [
+    h('input', { type: 'color', value: rgbHex,
+      onInput: e => {
+        const v = e.target.value;
+        onUpdate(formatColor(c.a, parseInt(v.slice(1,3),16), parseInt(v.slice(3,5),16), parseInt(v.slice(5,7),16)));
+      },
+      class: 'w-8 h-6 shrink-0 border rounded' }),
+    channelInput('A', 'a', c.a),
+    channelInput('R', 'r', c.r),
+    channelInput('G', 'g', c.g),
+    channelInput('B', 'b', c.b),
+  ]);
+}
+
 function renderBoxN(values, n, onUpdate) {
   const parts = String(values || '').split(',').concat(['0','0','0','0']).slice(0, n);
   return h('div', { class: 'flex gap-1 flex-1' },
@@ -95,7 +142,7 @@ function renderBoxN(values, n, onUpdate) {
 
 const ViewDetails = defineComponent({
   name: 'view-details',
-  props: ['node', 'device'],
+  props: ['node', 'device', 'density'],
   emits: ['edit-applied', 'error'],
   setup(props, { emit }) {
     const editValues = reactive({});
@@ -137,12 +184,19 @@ const ViewDetails = defineComponent({
     return () => {
       const n = props.node;
       const b = n.bounds || {};
+      const w = (b.right || 0) - (b.left || 0);
+      const ht = (b.bottom || 0) - (b.top || 0);
+      const d = props.density || 0;
+      const sizeStr = d > 0
+        ? `${w}×${ht} px (${(w / d).toFixed(4)} × ${(ht / d).toFixed(4)} dp)`
+        : `${w.toFixed(4)}×${ht.toFixed(4)}`;
       const path = (n.class_name || '') + (n.id_str ? `#${n.id_str}` : '');
       return h('div', { class: 'p-3 text-sm space-y-3' }, [
         h('div', { class: 'space-y-1' }, [
           h('div', null, [h('b', null, 'class: '), n.class_name]),
           n.id_str ? h('div', null, [h('b', null, 'id: '), n.id_str]) : null,
-          h('div', null, [h('b', null, 'bounds: '), `${b.left},${b.top} → ${b.right},${b.bottom} (${b.right - b.left}×${b.bottom - b.top})`]),
+          h('div', null, [h('b', null, 'bounds: '), `${b.left},${b.top} → ${b.right},${b.bottom}`]),
+          h('div', null, [h('b', null, 'size: '), sizeStr]),
           n.text ? h('div', null, [h('b', null, 'text: '), n.text]) : null,
           n.mem_addr ? h('div', null, [h('b', null, 'mem_addr: '), n.mem_addr]) : null,
         ]),
@@ -157,9 +211,7 @@ const ViewDetails = defineComponent({
           ...EDIT_FIELDS.map(f => h('div', { class: 'flex items-center gap-2' }, [
             h('label', { class: 'w-16 text-xs text-gray-600' }, f.label),
             f.type === 'color'
-              ? h('input', { type: 'color', value: editValues[f.code],
-                  onInput: e => editValues[f.code] = e.target.value,
-                  class: 'w-12 h-6' })
+              ? renderColor(editValues[f.code], v => editValues[f.code] = v)
               : f.type === 'visibility'
               ? h('select', { value: editValues[f.code],
                   onChange: e => editValues[f.code] = e.target.value,
@@ -274,8 +326,34 @@ createApp({
       ctx.drawImage(imageEl.value, 0, 0, canvas.width, canvas.height);
       // hover
       if (hover.value) drawBox(ctx, hover.value, 'rgba(220,38,38,0.9)', true);
-      // selected
-      if (selected.value) drawBox(ctx, selected.value, 'rgba(37,99,235,0.95)', false);
+      // selected: padding/margin fills then bounding box
+      if (selected.value) {
+        drawPaddingMargin(ctx, selected.value);
+        drawBox(ctx, selected.value, 'rgba(37,99,235,0.95)', false);
+      }
+    }
+
+    function drawPaddingMargin(ctx, node) {
+      const b = node.bounds; if (!b) return;
+      const [pl, pt, pr, pb] = node.padding || [0,0,0,0];
+      const [ml, mt, mr, mb] = node.margin || [0,0,0,0];
+      const s = scale;
+      // Margin: yellow outside the view
+      if (ml || mt || mr || mb) {
+        ctx.fillStyle = 'rgba(234,179,8,0.30)';
+        ctx.fillRect((b.left - ml) * s, (b.top - mt) * s, (b.right - b.left + ml + mr) * s, mt * s);              // top
+        ctx.fillRect((b.left - ml) * s, b.bottom * s,       (b.right - b.left + ml + mr) * s, mb * s);             // bottom
+        ctx.fillRect((b.left - ml) * s, b.top * s,           ml * s, (b.bottom - b.top) * s);                       // left
+        ctx.fillRect(b.right * s,        b.top * s,           mr * s, (b.bottom - b.top) * s);                       // right
+      }
+      // Padding: green inside the view
+      if (pl || pt || pr || pb) {
+        ctx.fillStyle = 'rgba(34,197,94,0.30)';
+        ctx.fillRect(b.left * s,                b.top * s,                  (b.right - b.left) * s, pt * s);                       // top
+        ctx.fillRect(b.left * s,                (b.bottom - pb) * s,        (b.right - b.left) * s, pb * s);                       // bottom
+        ctx.fillRect(b.left * s,                (b.top + pt) * s,           pl * s, (b.bottom - b.top - pt - pb) * s);             // left
+        ctx.fillRect((b.right - pr) * s,        (b.top + pt) * s,           pr * s, (b.bottom - b.top - pt - pb) * s);             // right
+      }
     }
 
     function drawBox(ctx, node, color, dashed) {

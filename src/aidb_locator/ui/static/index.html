@@ -62,6 +62,7 @@
         <view-details v-if="selected"
                       :node="selected"
                       :device="device"
+                      :density="snapshot?.density"
                       @edit-applied="refresh"
                       @error="msg => error = msg"></view-details>
         <div v-else-if="snapshot && !hasLayout" class="p-4 text-sm text-orange-800 bg-orange-50 border-l-4 border-orange-400">
