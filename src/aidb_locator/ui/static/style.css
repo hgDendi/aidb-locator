@@ -1,0 +1,9 @@
+html, body, #app { height: 100%; margin: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tree-node { user-select: none; }
+.tree-node.selected > .tree-row { background: rgba(59,130,246,0.15); }
+.tree-row { padding: 2px 4px; cursor: pointer; white-space: nowrap; }
+.tree-row:hover { background: rgba(0,0,0,0.05); }
+canvas.screenshot { cursor: crosshair; }
+.splitter { width: 4px; background: #e5e7eb; cursor: col-resize; flex-shrink: 0; transition: background .15s; }
+.splitter:hover { background: #9ca3af; }
