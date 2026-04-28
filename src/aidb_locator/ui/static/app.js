@@ -37,11 +37,15 @@ const TreeNode = defineComponent({
 
     return () => {
       if (!visible.value) return null;
-      const label = `${props.node.class_name}${props.node.id_str ? '#' + props.node.id_str : ''}`;
+      const fqn = props.node.class_name || '';
+      const dot = fqn.lastIndexOf('.');
+      const shortName = dot >= 0 ? fqn.slice(dot + 1) : fqn;
+      const label = `${shortName}${props.node.id_str ? '#' + props.node.id_str : ''}`;
       const children = props.node.children || [];
       return h('div', { class: ['tree-node', { selected: isSelected.value }] }, [
         h('div', {
           class: 'tree-row',
+          title: fqn,  // hover tooltip shows the full FQN
           onClick: () => emit('pick', props.node, [...props.path]),
         }, [
           children.length

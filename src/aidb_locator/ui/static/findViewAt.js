@@ -1,13 +1,29 @@
-// Pure hit-test for the layout tree.
+// Hit-test for the layout tree.
 // Bounds are half-open: x in [left, right), y in [top, bottom).
-// Returns the deepest node containing the point. Among siblings at the same
-// depth that all contain the point, returns the last one (z-order: later
-// siblings are drawn on top).
+//
+// We don't strictly follow z-order, because Android UIs often have transparent
+// overlay containers (e.g., a full-screen FrameLayout for a modal scrim) drawn
+// on top of the actual content. If we just returned the top-most node, we'd
+// constantly land on those overlays. Instead:
+//
+//   1. Collect every node whose bounds contain the point, across all branches.
+//   2. Pick the deepest one (descendants beat ancestors).
+//   3. Among the deepest tie, prefer the one with the most "informational
+//      content" (id > text > clickable > bg color), then z-order (later
+//      sibling wins).
 
 export function findViewAt(node, x, y) {
   if (!node) return null;
-  if (!_contains(node, x, y)) return null;
-  return _walk(node, x, y);
+  const candidates = [];
+  _collect(node, x, y, candidates, 0);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (b.depth !== a.depth) return b.depth - a.depth;
+    const s = _score(b.node) - _score(a.node);
+    if (s !== 0) return s;
+    return b.drawIndex - a.drawIndex;
+  });
+  return candidates[0].node;
 }
 
 function _contains(node, x, y) {
@@ -16,14 +32,19 @@ function _contains(node, x, y) {
   return x >= b.left && x < b.right && y >= b.top && y < b.bottom;
 }
 
-function _walk(node, x, y) {
-  const children = node.children || [];
-  // Walk in reverse so later (top-most) siblings win.
-  for (let i = children.length - 1; i >= 0; i--) {
-    const c = children[i];
-    if (_contains(c, x, y)) {
-      return _walk(c, x, y);
-    }
+function _collect(node, x, y, out, depth) {
+  if (!_contains(node, x, y)) return;
+  out.push({ node, depth, drawIndex: out.length });
+  for (const c of node.children || []) {
+    _collect(c, x, y, out, depth + 1);
   }
-  return node;
+}
+
+function _score(n) {
+  let s = 0;
+  if (n.id_str) s += 8;
+  if (n.text) s += 4;
+  if (n.is_clickable) s += 2;
+  if (n.background_color) s += 1;
+  return s;
 }
