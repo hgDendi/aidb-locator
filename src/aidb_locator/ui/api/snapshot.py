@@ -16,17 +16,34 @@ from aidb_locator.ui.deps import make_codelocator, make_native
 router = APIRouter()
 
 
-def _view_to_full_dict(v: WView, parent_abs_left: int = 0, parent_abs_top: int = 0) -> dict:
-    """Serialize WView with absolute bounds (CodeLocator returns parent-relative).
+def _view_to_full_dict(v: WView, parent_content_left: int = 0, parent_content_top: int = 0) -> dict:
+    """Serialize WView with screen-absolute bounds.
 
-    `v.left/right/top/bottom` are `view.getLeft/Right/Top/Bottom()` — relative
-    to the immediate parent. Walking the tree and accumulating gives the screen-
-    absolute rectangle the UI needs for hit-testing.
+    CodeLocator returns parent-relative `getLeft/Top/Right/Bottom()`. To turn
+    these into where the view is actually drawn on screen we need to also
+    account for two things every parent does on the way down:
+
+      - `scrollX/Y`: shifts the parent's children opposite to the scroll. A
+        ViewPager whose `scrollX = 2432` draws its child at layout x=2432
+        starting at screen x=0. Without this, items inside any horizontal
+        scroller / pager not on page 0 land off-screen in the hit-test.
+      - `translationX/Y`: shifts the view itself from its layout position
+        without changing layout (used by page transformers, animations).
+
+    So for each view:
+        screen_left = parent_content_left + v.left + v.translation_x
+        next children's content_origin = screen_left - v.scroll_x
     """
-    abs_left = parent_abs_left + v.left
-    abs_top = parent_abs_top + v.top
-    abs_right = parent_abs_left + v.right
-    abs_bottom = parent_abs_top + v.bottom
+    abs_left = parent_content_left + v.left + int(round(v.translation_x))
+    abs_top = parent_content_top + v.top + int(round(v.translation_y))
+    width = v.right - v.left
+    height = v.bottom - v.top
+    abs_right = abs_left + width
+    abs_bottom = abs_top + height
+
+    child_content_left = abs_left - v.scroll_x
+    child_content_top = abs_top - v.scroll_y
+
     return {
         "class_name": v.class_name,
         "visibility": v.visibility,
@@ -41,7 +58,7 @@ def _view_to_full_dict(v: WView, parent_abs_left: int = 0, parent_abs_top: int =
         "text_color": v.text_color,
         "text_size": v.text_size,
         "is_clickable": v.is_clickable,
-        "children": [_view_to_full_dict(c, abs_left, abs_top) for c in v.children],
+        "children": [_view_to_full_dict(c, child_content_left, child_content_top) for c in v.children],
     }
 
 

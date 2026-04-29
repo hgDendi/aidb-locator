@@ -33,6 +33,8 @@ function _contains(node, x, y) {
 }
 
 function _collect(node, x, y, out, depth) {
+  // INVISIBLE / GONE nodes (and their subtrees) don't render and aren't hit-testable.
+  if (node.visibility && node.visibility !== "V") return;
   if (!_contains(node, x, y)) return;
   out.push({ node, depth, drawIndex: out.length });
   for (const c of node.children || []) {
