@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aidb-locator snapshot</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%84%3C/text%3E%3C/svg%3E" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: #111827; background: #f9fafb;
+    }
+    .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+    button { font: inherit; cursor: pointer; }
+
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    header.top {
+      display: flex; align-items: center; gap: 16px;
+      padding: 8px 16px; background: white; border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+    header.top .meta { font-size: 12px; flex: 1; line-height: 1.6; }
+    header.top .meta b { color: #374151; }
+    header.top .meta .muted { color: #6b7280; }
+    header.top .badge {
+      background: #ecfdf5; color: #065f46; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    header.top .pill {
+      background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+
+    #changes-banner {
+      flex-shrink: 0; background: #fff7ed; border-bottom: 1px solid #fdba74;
+      max-height: 40vh; overflow: auto;
+    }
+    #changes-banner summary {
+      padding: 8px 16px; cursor: pointer; font-weight: 600; color: #9a3412;
+      list-style: none; user-select: none;
+    }
+    #changes-banner summary::before { content: "▸ "; }
+    #changes-banner[open] summary::before { content: "▾ "; }
+    #changes-banner .changes-toolbar {
+      padding: 0 16px 8px 16px; display: flex; align-items: center; gap: 12px;
+    }
+    #changes-banner .changes-toolbar button {
+      background: #ea580c; color: white; border: none; border-radius: 4px;
+      padding: 4px 12px; font-size: 12px; font-weight: 600;
+    }
+    #changes-banner .changes-toolbar button:hover { background: #c2410c; }
+    #changes-banner .copy-feedback {
+      font-size: 11px; color: #15803d; font-weight: 600; opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #changes-banner .copy-feedback.show { opacity: 1; }
+    #changes-banner table {
+      width: 100%; border-collapse: collapse; font-size: 12px; margin: 0 0 8px 0;
+    }
+    #changes-banner th, #changes-banner td {
+      text-align: left; padding: 4px 8px; border-bottom: 1px solid #fed7aa;
+    }
+    #changes-banner th { background: #fed7aa; color: #7c2d12; position: sticky; top: 0; }
+    #changes-banner tr:hover { background: #ffedd5; cursor: pointer; }
+    #changes-banner code {
+      background: rgba(255,255,255,0.6); padding: 1px 4px; border-radius: 3px;
+      font-size: 11px;
+    }
+    #changes-banner .arrow { color: #9a3412; font-weight: bold; }
+
+    main {
+      flex: 1; min-height: 0;
+      display: grid; grid-template-columns: 280px 1fr 360px;
+    }
+    aside.tree-pane, aside.details-pane {
+      background: white; overflow: auto; min-height: 0;
+    }
+    aside.tree-pane { border-right: 1px solid #e5e7eb; }
+    aside.details-pane { border-left: 1px solid #e5e7eb; }
+
+    .tree-search {
+      width: calc(100% - 16px); margin: 8px; padding: 4px 8px;
+      border: 1px solid #d1d5db; border-radius: 4px; font: inherit;
+    }
+    .tree {
+      padding: 0 8px 16px 8px; font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+    .tree-row {
+      padding: 2px 4px; border-radius: 3px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .tree-row:hover { background: #f3f4f6; }
+    .tree-row.selected { background: #dbeafe; color: #1e40af; font-weight: 600; }
+    .tree-row.modified::after {
+      content: " ●"; color: #ea580c; font-weight: bold;
+    }
+    .tree-toggle {
+      display: inline-block; width: 12px; cursor: pointer; user-select: none;
+    }
+    .tree-children { margin-left: 12px; }
+
+    section.canvas-pane {
+      background: #f3f4f6; overflow: auto; position: relative; min-height: 0;
+    }
+    .canvas-wrap {
+      min-height: 100%;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 16px;
+    }
+    canvas.screenshot {
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #e5e7eb;
+      cursor: crosshair;
+      max-width: none; height: auto;
+    }
+    .zoom-badge {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(255,255,255,0.9); border: 1px solid #d1d5db;
+      border-radius: 4px; padding: 2px 8px; font-size: 11px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .zoom-badge button {
+      border: none; background: transparent; color: #2563eb; padding: 0;
+    }
+
+    .details { padding: 12px; }
+    .details h3 {
+      font-size: 11px; font-weight: 600; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin: 16px 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #e5e7eb;
+    }
+    .details h3:first-child { margin-top: 0; }
+    .details .row {
+      display: flex; gap: 8px; padding: 2px 0; align-items: baseline;
+      font-size: 12px;
+    }
+    .details .row .k {
+      width: 96px; flex-shrink: 0; color: #6b7280; font-weight: 500;
+    }
+    .details .row .v {
+      flex: 1; word-break: break-all; font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+    .details .empty {
+      color: #9ca3af; font-style: italic; padding: 24px 8px; text-align: center;
+    }
+    .details .copy-btn {
+      background: #2563eb; color: white; padding: 4px 12px; border: none;
+      border-radius: 4px; font-size: 11px; margin-top: 8px;
+    }
+    .details .change-row {
+      background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px;
+      padding: 4px 8px; margin-bottom: 4px; font-size: 11px;
+    }
+    .details .change-row .label { font-weight: 600; color: #9a3412; }
+    .details .change-row code {
+      background: white; padding: 1px 4px; border-radius: 3px;
+      font-size: 10px;
+    }
+
+    footer.bot {
+      flex-shrink: 0; padding: 6px 16px; background: white;
+      border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280;
+      display: flex; gap: 12px; align-items: center;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 200px 1fr 1fr; }
+      aside.tree-pane, aside.details-pane { border: none; border-bottom: 1px solid #e5e7eb; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <span class="badge">📄 SNAPSHOT</span>
+      <div class="meta">
+        <div><b>Activity:</b> <span id="hdr-activity">—</span></div>
+        <div class="muted"><b>Fragments:</b> <span id="hdr-fragments">—</span></div>
+      </div>
+      <div class="meta" style="text-align: right;">
+        <div><b>Device:</b> <span id="hdr-device">—</span></div>
+        <div class="muted"><span id="hdr-exported">—</span></div>
+      </div>
+      <span class="pill" id="hdr-changes-pill" style="display: none;">0 changes</span>
+    </header>
+
+    <details id="changes-banner">
+      <summary id="changes-summary">Session Changes (0)</summary>
+      <div class="changes-toolbar">
+        <button id="copy-session-btn" title="把所有改动整理成一段对 AI 友好的自然语言描述（页面 + 元素位置 + 改动内容），拷贝到剪贴板">
+          📋 copy 改动（AI 友好）
+        </button>
+        <span id="copy-session-feedback" class="copy-feedback"></span>
+      </div>
+      <table id="changes-table">
+        <thead>
+          <tr>
+            <th>View</th>
+            <th>Field</th>
+            <th>Before</th>
+            <th></th>
+            <th>After</th>
+          </tr>
+        </thead>
+        <tbody id="changes-tbody"></tbody>
+      </table>
+    </details>
+
+    <main>
+      <aside class="tree-pane">
+        <input class="tree-search" id="search" placeholder="🔍 search id/class/text" />
+        <div class="tree" id="tree"></div>
+      </aside>
+
+      <section class="canvas-pane" id="canvas-pane">
+        <div class="canvas-wrap">
+          <canvas class="screenshot" id="canvas"></canvas>
+        </div>
+        <div class="zoom-badge">
+          <span>🔍 <span id="zoom-pct">100%</span></span>
+          <button id="zoom-reset" title="reset 100%">⟲</button>
+        </div>
+      </section>
+
+      <aside class="details-pane">
+        <div class="details" id="details">
+          <div class="empty">Click any view in the screenshot or tree.</div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="bot">
+      <span>aidb-locator snapshot · self-contained · no ADB required</span>
+      <span style="flex: 1;"></span>
+      <span id="footer-tip">Ctrl/⌘ + scroll to zoom · click screenshot to inspect</span>
+    </footer>
+  </div>
+
+  <script>
+    "use strict";
+
+    // -------- Data load --------
+    const DATA = window.__AIDB_DATA__ || {};
+    const layout = DATA.layout || null;
+    const sessionEdits = DATA.session_edits || [];
+    const editsByAddr = Object.fromEntries(sessionEdits.map(e => [e.mem_addr, e]));
+
+    // -------- Header --------
+    document.getElementById("hdr-activity").textContent =
+      DATA.activity?.activity || "—";
+    document.getElementById("hdr-fragments").textContent =
+      DATA.activity?.fragments?.length ? DATA.activity.fragments.join(" › ") : "—";
+    document.getElementById("hdr-device").textContent =
+      DATA.device_serial || "—";
+    document.getElementById("hdr-exported").textContent =
+      DATA.exported_at ? `exported ${new Date(DATA.exported_at).toLocaleString()}` : "";
+
+    // -------- Session changes table --------
+    const totalChanges = sessionEdits.reduce((n, e) => n + e.changes.length, 0);
+    const banner = document.getElementById("changes-banner");
+    const summary = document.getElementById("changes-summary");
+    summary.textContent = `Session Changes (${totalChanges} on ${sessionEdits.length} view${sessionEdits.length === 1 ? "" : "s"})`;
+    if (totalChanges > 0) {
+      banner.open = true;
+      const pill = document.getElementById("hdr-changes-pill");
+      pill.style.display = "inline-block";
+      pill.textContent = `${totalChanges} change${totalChanges === 1 ? "" : "s"}`;
+      const tbody = document.getElementById("changes-tbody");
+      for (const entry of sessionEdits) {
+        const viewLabel = shortClass(entry.class_name) +
+          (entry.id_str ? "#" + entry.id_str : "");
+        for (const c of entry.changes) {
+          const tr = document.createElement("tr");
+          tr.title = "click to select this view";
+          tr.onclick = () => selectByAddr(entry.mem_addr);
+          tr.innerHTML = `
+            <td class="mono">${escapeHtml(viewLabel)}</td>
+            <td>${escapeHtml(c.label)} <span class="mono" style="color:#9a3412">(${escapeHtml(c.code)})</span></td>
+            <td><code>${escapeHtml(String(c.baseline))}</code></td>
+            <td class="arrow">→</td>
+            <td><code>${escapeHtml(String(c.applied))}</code></td>`;
+          tbody.appendChild(tr);
+        }
+      }
+    } else {
+      banner.style.display = "none";
+    }
+
+    // -------- Session-wide change report (AI-friendly) --------
+    // Produces a markdown blob describing every applied edit in natural
+    // Chinese: where the page is, where the element sits in the layout, and
+    // what changed. Pasteable straight into an AI chat for context.
+    function describeLocation(entry) {
+      const b = entry.bounds;
+      if (!b) return "（位置未知）";
+      const w = b.right - b.left;
+      const h = b.bottom - b.top;
+      const cx = Math.round((b.left + b.right) / 2);
+      const cy = Math.round((b.top + b.bottom) / 2);
+      const screenW = DATA.device_size?.width || 0;
+      const screenH = DATA.device_size?.height || 0;
+      const d = DATA.density || 0;
+
+      // Rough zone label so an AI / human reader can picture the element
+      // without computing percentages: "屏幕左上 / 中部 / 右下" 等。
+      let vertLabel = "中部";
+      if (screenH) {
+        if (cy < screenH / 3) vertLabel = "顶部";
+        else if (cy > screenH * 2 / 3) vertLabel = "底部";
+      }
+      let horizLabel = "居中";
+      if (screenW) {
+        if (cx < screenW / 3) horizLabel = "左侧";
+        else if (cx > screenW * 2 / 3) horizLabel = "右侧";
+      }
+
+      const sizeStr = d > 0
+        ? `${w}×${h} px (约 ${(w/d).toFixed(0)}×${(h/d).toFixed(0)} dp)`
+        : `${w}×${h} px`;
+      return `屏幕${vertLabel}${horizLabel}（中心点 ${cx},${cy}），bounds ${b.left},${b.top} → ${b.right},${b.bottom}，大小 ${sizeStr}`;
+    }
+
+    function describeHierarchy(entry) {
+      const chain = findAncestors(layout, entry.mem_addr);
+      if (!chain) {
+        // Element no longer in the tree (e.g. recreated). Fall back to its own label.
+        return shortClass(entry.class_name) + (entry.id_str ? "#" + entry.id_str : "");
+      }
+      return chain.map(a => shortClass(a.class_name) + (a.id_str ? "#" + a.id_str : ""))
+                  .join(" › ");
+    }
+
+    function buildSessionReport() {
+      const lines = [];
+      lines.push("# UI 改动汇总");
+      lines.push("");
+      const act = DATA.activity || {};
+      const pageBits = [];
+      if (act.activity) pageBits.push(act.activity);
+      if (act.fragments?.length) pageBits.push("Fragment: " + act.fragments.join(" > "));
+      if (act.package) pageBits.push("package: " + act.package);
+      lines.push("> 页面: " + (pageBits.length ? pageBits.join("，") : "未知"));
+      const ds = DATA.device_size;
+      if (ds) {
+        const d = DATA.density || 0;
+        lines.push(`> 设备: ${DATA.device_serial || "—"}（${ds.width}×${ds.height} px${d ? ` @ ${d}×` : ""}）`);
+      }
+      if (DATA.exported_at) {
+        lines.push("> 导出时间: " + new Date(DATA.exported_at).toLocaleString());
+      }
+      lines.push("");
+      lines.push(`本次 session 共在 **${sessionEdits.length}** 个 view 上做了 **${totalChanges}** 处改动：`);
+      lines.push("");
+
+      sessionEdits.forEach((entry, i) => {
+        const label = shortClass(entry.class_name) + (entry.id_str ? "#" + entry.id_str : "");
+        lines.push(`## ${i + 1}. ${label}`);
+        lines.push("");
+        lines.push(`- **元素**: \`${entry.class_name || ""}\`${entry.id_str ? `（id=\`${entry.id_str}\`）` : ""}`);
+        lines.push(`- **层级**: ${describeHierarchy(entry)}`);
+        lines.push(`- **位置**: ${describeLocation(entry)}`);
+        lines.push("- **改动**:");
+        for (const c of entry.changes) {
+          lines.push(`  - ${c.label}（\`${c.code}\`）: \`${c.baseline}\` → \`${c.applied}\``);
+        }
+        lines.push("");
+      });
+
+      lines.push("---");
+      lines.push("> 由 aidb-locator HTML 快照导出，可在浏览器打开同名 .html 查看完整截图与 view 树。");
+      return lines.join("\n");
+    }
+
+    document.getElementById("copy-session-btn").addEventListener("click", () => {
+      const text = buildSessionReport();
+      const fb = document.getElementById("copy-session-feedback");
+      const flash = (msg) => {
+        fb.textContent = msg;
+        fb.classList.add("show");
+        setTimeout(() => fb.classList.remove("show"), 1800);
+      };
+      navigator.clipboard.writeText(text)
+        .then(() => flash("✓ 已复制"))
+        .catch(() => {
+          // Fallback when clipboard API is blocked (file:// in some browsers)
+          window.prompt("自动复制失败，请手动 Ctrl+C：", text);
+        });
+    });
+
+    // -------- Tree --------
+    let selected = null;     // node
+    let hover = null;        // node
+    let searchTerm = "";
+
+    function shortClass(fqn) {
+      if (!fqn) return "";
+      const i = fqn.lastIndexOf(".");
+      return i >= 0 ? fqn.slice(i + 1) : fqn;
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function nodeMatches(n, term) {
+      if (!term) return true;
+      const t = term.toLowerCase();
+      return [n.class_name, n.id_str, n.text].filter(Boolean)
+        .some(x => String(x).toLowerCase().includes(t));
+    }
+    function subtreeMatches(n, term) {
+      if (nodeMatches(n, term)) return true;
+      return (n.children || []).some(c => subtreeMatches(c, term));
+    }
+
+    const expanded = new WeakSet();   // collapsed unless in this set
+    function expandAll(n) {
+      expanded.add(n);
+      for (const c of n.children || []) expandAll(c);
+    }
+    if (layout) expandAll(layout);
+
+    function renderTree() {
+      const container = document.getElementById("tree");
+      container.innerHTML = "";
+      if (!layout) {
+        container.innerHTML = '<div class="empty" style="padding:8px;color:#9ca3af">no layout</div>';
+        return;
+      }
+      const term = searchTerm;
+      const root = renderNode(layout, term);
+      if (root) container.appendChild(root);
+    }
+
+    function renderNode(n, term) {
+      if (term && !subtreeMatches(n, term)) return null;
+      const wrap = document.createElement("div");
+      const row = document.createElement("div");
+      row.className = "tree-row";
+      if (selected && selected.mem_addr === n.mem_addr) row.classList.add("selected");
+      if (editsByAddr[n.mem_addr]) row.classList.add("modified");
+      row.title = n.class_name || "";
+
+      const children = n.children || [];
+      const toggle = document.createElement("span");
+      toggle.className = "tree-toggle";
+      toggle.textContent = children.length ? (expanded.has(n) ? "▾" : "▸") : "•";
+      if (children.length) {
+        toggle.onclick = (e) => {
+          e.stopPropagation();
+          if (expanded.has(n)) expanded.delete(n); else expanded.add(n);
+          renderTree();
+        };
+      }
+      row.appendChild(toggle);
+      row.append(" " + shortClass(n.class_name) + (n.id_str ? "#" + n.id_str : ""));
+      row.onclick = () => { select(n); };
+      wrap.appendChild(row);
+
+      if (children.length && (expanded.has(n) || term)) {
+        const kids = document.createElement("div");
+        kids.className = "tree-children";
+        for (const c of children) {
+          const sub = renderNode(c, term);
+          if (sub) kids.appendChild(sub);
+        }
+        wrap.appendChild(kids);
+      }
+      return wrap;
+    }
+
+    document.getElementById("search").addEventListener("input", (e) => {
+      searchTerm = e.target.value.trim();
+      renderTree();
+    });
+
+    // -------- Canvas --------
+    const canvas = document.getElementById("canvas");
+    const canvasPane = document.getElementById("canvas-pane");
+    const ctx = canvas.getContext("2d");
+    let img = null;
+    let baseScale = 1;
+    let zoom = 1;
+    let scale = 1;
+
+    function loadImage() {
+      if (!DATA.screenshot_png_b64) return;
+      const im = new Image();
+      im.onload = () => {
+        img = im;
+        renderImage();
+      };
+      im.src = "data:image/png;base64," + DATA.screenshot_png_b64;
+    }
+
+    function renderImage() {
+      if (!img) return;
+      const containerW = canvasPane.clientWidth - 32;
+      baseScale = Math.min(1, containerW / img.naturalWidth);
+      scale = baseScale * zoom;
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      drawOverlays();
+      document.getElementById("zoom-pct").textContent = Math.round(zoom * 100) + "%";
+    }
+
+    function drawOverlays() {
+      if (!img) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // Highlight modified views faintly so reviewers can spot what changed.
+      for (const e of sessionEdits) {
+        if (e.bounds) drawBox(e.bounds, "rgba(234,88,12,0.6)", true, 1);
+      }
+      if (hover) drawBox(hover.bounds, "rgba(220,38,38,0.9)", true, 2);
+      if (selected) {
+        drawPaddingMargin(selected);
+        drawBox(selected.bounds, "rgba(37,99,235,0.95)", false, 2);
+      }
+    }
+
+    function drawBox(b, color, dashed, lw) {
+      if (!b) return;
+      ctx.save();
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = color;
+      ctx.setLineDash(dashed ? [6, 4] : []);
+      ctx.strokeRect(b.left * scale, b.top * scale,
+        (b.right - b.left) * scale, (b.bottom - b.top) * scale);
+      ctx.restore();
+    }
+
+    function drawPaddingMargin(n) {
+      const b = n.bounds; if (!b) return;
+      const [pl, pt, pr, pb] = n.padding || [0, 0, 0, 0];
+      const [ml, mt, mr, mb] = n.margin || [0, 0, 0, 0];
+      const s = scale;
+      if (ml || mt || mr || mb) {
+        ctx.fillStyle = "rgba(234,179,8,0.30)";
+        ctx.fillRect((b.left - ml) * s, (b.top - mt) * s, (b.right - b.left + ml + mr) * s, mt * s);
+        ctx.fillRect((b.left - ml) * s, b.bottom * s, (b.right - b.left + ml + mr) * s, mb * s);
+        ctx.fillRect((b.left - ml) * s, b.top * s, ml * s, (b.bottom - b.top) * s);
+        ctx.fillRect(b.right * s, b.top * s, mr * s, (b.bottom - b.top) * s);
+      }
+      if (pl || pt || pr || pb) {
+        ctx.fillStyle = "rgba(34,197,94,0.30)";
+        ctx.fillRect(b.left * s, b.top * s, (b.right - b.left) * s, pt * s);
+        ctx.fillRect(b.left * s, (b.bottom - pb) * s, (b.right - b.left) * s, pb * s);
+        ctx.fillRect(b.left * s, (b.top + pt) * s, pl * s, (b.bottom - b.top - pt - pb) * s);
+        ctx.fillRect((b.right - pr) * s, (b.top + pt) * s, pr * s, (b.bottom - b.top - pt - pb) * s);
+      }
+    }
+
+    // Hit-testing — duplicated from findViewAt.js so the snapshot stays
+    // self-contained. Same heuristic: deepest containing node, prefer the
+    // one carrying the most info (id > text > clickable > bg).
+    function findViewAt(node, x, y) {
+      if (!node) return null;
+      const out = [];
+      collect(node, x, y, out, 0);
+      if (!out.length) return null;
+      out.sort((a, b) => {
+        if (b.depth !== a.depth) return b.depth - a.depth;
+        const s = score(b.node) - score(a.node);
+        if (s !== 0) return s;
+        return b.idx - a.idx;
+      });
+      return out[0].node;
+    }
+    function collect(n, x, y, out, depth) {
+      if (n.visibility && n.visibility !== "V") return;
+      const b = n.bounds;
+      if (!b || x < b.left || x >= b.right || y < b.top || y >= b.bottom) return;
+      out.push({ node: n, depth, idx: out.length });
+      for (const c of n.children || []) collect(c, x, y, out, depth + 1);
+    }
+    function score(n) {
+      let s = 0;
+      if (n.id_str) s += 8;
+      if (n.text) s += 4;
+      if (n.is_clickable) s += 2;
+      if (n.background_color) s += 1;
+      return s;
+    }
+
+    let lastMove = 0;
+    canvas.addEventListener("mousemove", (e) => {
+      const now = performance.now();
+      if (now - lastMove < 33) return;
+      lastMove = now;
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) / scale;
+      const y = (e.clientY - r.top) / scale;
+      hover = findViewAt(layout, x, y);
+      drawOverlays();
+    });
+    canvas.addEventListener("mouseleave", () => { hover = null; drawOverlays(); });
+    canvas.addEventListener("click", (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) / scale;
+      const y = (e.clientY - r.top) / scale;
+      const hit = findViewAt(layout, x, y);
+      if (hit) select(hit);
+    });
+
+    canvasPane.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const f = e.deltaY > 0 ? 0.9 : 1.111;
+        zoom = Math.max(0.2, Math.min(8, zoom * f));
+        renderImage();
+      }
+    }, { passive: false });
+    document.getElementById("zoom-reset").onclick = () => { zoom = 1; renderImage(); };
+
+    // -------- Selection + details panel --------
+    function findByAddr(n, addr) {
+      if (!n || !addr) return null;
+      if (n.mem_addr === addr) return n;
+      for (const c of n.children || []) {
+        const r = findByAddr(c, addr);
+        if (r) return r;
+      }
+      return null;
+    }
+    function findAncestors(root, addr, chain) {
+      if (!root) return null;
+      chain = chain || [];
+      const here = chain.concat([root]);
+      if (root.mem_addr === addr) return here;
+      for (const c of root.children || []) {
+        const r = findAncestors(c, addr, here);
+        if (r) return r;
+      }
+      return null;
+    }
+
+    function select(n) {
+      selected = n;
+      renderTree();
+      renderDetails();
+      drawOverlays();
+    }
+    function selectByAddr(addr) {
+      const n = findByAddr(layout, addr);
+      if (n) {
+        // Ensure ancestors are expanded so the row is visible
+        const chain = findAncestors(layout, addr) || [];
+        for (const a of chain) expanded.add(a);
+        select(n);
+      }
+    }
+
+    const FIELDS = [
+      { code: "T",   label: "text",       from: n => n.text || "" },
+      { code: "P",   label: "padding",    from: n => (n.padding || [0,0,0,0]).join(",") },
+      { code: "M",   label: "margin",     from: n => (n.margin  || [0,0,0,0]).join(",") },
+      { code: "A",   label: "alpha",      from: n => String(n.alpha ?? 1) },
+      { code: "B",   label: "background", from: n => n.background_color || "" },
+      { code: "TC",  label: "text color", from: n => n.text_color || "" },
+      { code: "TS",  label: "text size",  from: n => String(n.text_size || 0) },
+      { code: "VF",  label: "visibility", from: n => n.visibility || "V" },
+    ];
+
+    function buildElementReport(n) {
+      const b = n.bounds || {};
+      const w = (b.right || 0) - (b.left || 0);
+      const h = (b.bottom || 0) - (b.top || 0);
+      const d = DATA.density || 0;
+      const sizeStr = d > 0 ? `${w}×${h} px (${(w/d).toFixed(4)}×${(h/d).toFixed(4)} dp)` : `${w}×${h} px`;
+      const ancestors = findAncestors(layout, n.mem_addr) || [n];
+      const chain = ancestors.slice(0, -1);
+      const lines = [
+        "# UI Element",
+        "",
+        `class: ${n.class_name}`,
+        n.id_str ? `id: ${n.id_str}` : null,
+        `bounds: ${b.left},${b.top} → ${b.right},${b.bottom}`,
+        `size: ${sizeStr}`,
+        n.text ? `text: ${JSON.stringify(n.text)}` : null,
+        `mem_addr: ${n.mem_addr || ""}`,
+        `visibility: ${n.visibility || "V"}`,
+        `alpha: ${n.alpha ?? 1}`,
+        `background_color: ${n.background_color || "null"}`,
+        `text_color: ${n.text_color || "null"}`,
+        `text_size: ${n.text_size || 0}`,
+        `padding [l,t,r,b]: ${(n.padding || [0,0,0,0]).join(",")}`,
+        `margin  [l,t,r,b]: ${(n.margin  || [0,0,0,0]).join(",")}`,
+        "",
+        "## Hierarchy (root → selected)",
+      ];
+      chain.forEach((a, i) => {
+        lines.push(`${"  ".repeat(i)}${a.class_name}${a.id_str ? "#" + a.id_str : ""}`);
+      });
+      lines.push(`${"  ".repeat(chain.length)}${n.class_name}${n.id_str ? "#" + n.id_str : ""}  ← selected`);
+      const act = DATA.activity;
+      if (act && (act.activity || act.fragments?.length)) {
+        lines.push("", "## Activity");
+        if (act.activity) lines.push(`activity: ${act.activity}`);
+        if (act.package)  lines.push(`package: ${act.package}`);
+        if (act.fragments?.length) lines.push(`fragments: ${act.fragments.join(" > ")}`);
+      }
+      return lines.filter(l => l !== null).join("\n");
+    }
+
+    function renderDetails() {
+      const root = document.getElementById("details");
+      if (!selected) {
+        root.innerHTML = '<div class="empty">Click any view in the screenshot or tree.</div>';
+        return;
+      }
+      const n = selected;
+      const b = n.bounds || {};
+      const w = (b.right || 0) - (b.left || 0);
+      const h = (b.bottom || 0) - (b.top || 0);
+      const d = DATA.density || 0;
+      const sizeStr = d > 0 ? `${w}×${h} px (${(w/d).toFixed(4)} × ${(h/d).toFixed(4)} dp)` : `${w}×${h}`;
+
+      let html = '<h3>Identity</h3>';
+      const rows = [
+        ["class", n.class_name],
+        n.id_str ? ["id", n.id_str] : null,
+        ["bounds", `${b.left},${b.top} → ${b.right},${b.bottom}`],
+        ["size", sizeStr],
+        n.text ? ["text", n.text] : null,
+        ["mem_addr", n.mem_addr || ""],
+      ].filter(Boolean);
+      for (const [k, v] of rows) {
+        html += `<div class="row"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div></div>`;
+      }
+
+      html += '<h3>Properties</h3>';
+      for (const f of FIELDS) {
+        html += `<div class="row"><div class="k">${escapeHtml(f.label)}</div><div class="v">${escapeHtml(f.from(n))}</div></div>`;
+      }
+
+      const entry = editsByAddr[n.mem_addr];
+      if (entry && entry.changes.length) {
+        html += '<h3>Applied Changes</h3>';
+        for (const c of entry.changes) {
+          html += `<div class="change-row">
+            <div class="label">${escapeHtml(c.label)} (${escapeHtml(c.code)})</div>
+            <div><code>${escapeHtml(String(c.baseline))}</code> → <code>${escapeHtml(String(c.applied))}</code></div>
+          </div>`;
+        }
+      }
+
+      html += `<button class="copy-btn" id="copy-btn">📋 Copy element</button>`;
+      root.innerHTML = html;
+      document.getElementById("copy-btn").onclick = () => {
+        const text = buildElementReport(n);
+        navigator.clipboard.writeText(text).catch(() => {
+          // Fallback: open prompt so user can copy manually
+          window.prompt("Copy:", text);
+        });
+      };
+    }
+
+    // -------- Initial render --------
+    renderTree();
+    loadImage();
+    window.addEventListener("resize", renderImage);
+  </script>
+</body>
+</html>

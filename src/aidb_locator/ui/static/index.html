@@ -73,6 +73,7 @@
                       :node="selected"
                       :device="device"
                       :snapshot="snapshot"
+                      :session-edits="sessionEdits"
                       @edit-applied="refresh"
                       @error="msg => error = msg"></view-details>
         <div v-else-if="snapshot && !hasLayout" class="p-4 text-sm text-orange-800 bg-orange-50 border-l-4 border-orange-400">
@@ -96,6 +97,10 @@
              class="flex-1 px-2 py-1 border rounded" />
       <button @click="sendSchema" class="bg-blue-600 text-white px-3 py-1 rounded">🚀 跳转</button>
       <button @click="exportLayoutJson" class="bg-gray-200 px-3 py-1 rounded">📥 导出 JSON</button>
+      <button @click="exportHtmlSnapshot" class="bg-emerald-600 text-white px-3 py-1 rounded"
+              title="导出当前截图 + view 树 + 本次 session 所有 applied 改动为单文件 HTML，分享/debug 用">
+        📄 导出 HTML 快照
+      </button>
     </footer>
   </div>
 

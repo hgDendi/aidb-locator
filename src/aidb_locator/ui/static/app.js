@@ -186,42 +186,61 @@ function renderBoxN(values, n, onUpdate) {
 
 const ViewDetails = defineComponent({
   name: 'view-details',
-  props: ['node', 'device', 'snapshot'],
+  props: ['node', 'device', 'snapshot', 'sessionEdits'],
   emits: ['edit-applied', 'error'],
   setup(props, { emit }) {
     const editValues = reactive({});      // current input values per field code
-    const baseline   = reactive({});      // value at the moment the node was first selected
-    const appliedValue = reactive({});    // last value successfully applied (per field) — drives 撤销 button + change report
-    const lastAddr = ref(null);
 
-    // When a *different* node is selected, capture baseline + reset applied.
-    // When the *same* node is refreshed (post-edit), only refresh editValues for
-    // fields the user hasn't applied (so unapplied dirty input is preserved).
-    watch(() => props.node, (n) => {
-      if (!n) return;
-      const switched = lastAddr.value !== n.mem_addr;
-      lastAddr.value = n.mem_addr;
-      if (switched) {
-        for (const k of Object.keys(baseline))     delete baseline[k];
-        for (const k of Object.keys(appliedValue)) delete appliedValue[k];
+    // Per-node baseline & applied state lives in props.sessionEdits (lifted to root)
+    // so it survives node switches and feeds the 📥 HTML snapshot export.
+    function ensureEntry(n) {
+      let entry = props.sessionEdits[n.mem_addr];
+      if (!entry) {
+        entry = {
+          class_name: n.class_name,
+          id_str: n.id_str,
+          bounds: n.bounds ? { ...n.bounds } : null,
+          edits: {},   // code -> { label, baseline, applied (null = not applied) }
+        };
+        props.sessionEdits[n.mem_addr] = entry;
       }
       for (const f of EDIT_FIELDS) {
-        const v = f.from(n);
-        if (switched) baseline[f.code] = v;
-        if (appliedValue[f.code] === undefined) editValues[f.code] = v;
+        if (!entry.edits[f.code]) {
+          // Capture baseline lazily — first time we observe this field for the node,
+          // before any edit has gone out, so we can always restore.
+          entry.edits[f.code] = { label: f.label, baseline: f.from(n), applied: null };
+        }
+      }
+      return entry;
+    }
+
+    // When a different node is selected OR same node is refreshed: pull editValues
+    // from applied (if any) else from the device's current value.
+    watch(() => props.node, (n) => {
+      if (!n) return;
+      const entry = ensureEntry(n);
+      for (const f of EDIT_FIELDS) {
+        const e = entry.edits[f.code];
+        editValues[f.code] = e.applied != null ? e.applied : f.from(n);
       }
     }, { immediate: true });
 
     const copy = (text) => navigator.clipboard.writeText(text).catch(() => {});
 
+    const currentEntry = computed(() =>
+      props.node ? props.sessionEdits[props.node.mem_addr] : null);
+
     // What the device most recently has for this field (per our knowledge):
     // last applied value if any, otherwise the baseline.
-    const effectiveValue = (code) =>
-      appliedValue[code] !== undefined ? appliedValue[code] : baseline[code];
+    const effectiveValue = (code) => {
+      const e = currentEntry.value?.edits[code];
+      if (!e) return undefined;
+      return e.applied != null ? e.applied : e.baseline;
+    };
     const isDirty = (code) => editValues[code] !== effectiveValue(code);
-    const wasApplied = (code) => appliedValue[code] !== undefined;
+    const wasApplied = (code) => currentEntry.value?.edits[code]?.applied != null;
     const hasAnyApplied = computed(() =>
-      EDIT_FIELDS.some(f => appliedValue[f.code] !== undefined));
+      Object.values(currentEntry.value?.edits || {}).some(e => e.applied != null));
 
     function buildElementReport() {
       const n = props.node;
@@ -289,7 +308,8 @@ const ViewDetails = defineComponent({
     async function applyEdit(code) {
       try {
         await _send(code, editValues[code]);
-        appliedValue[code] = editValues[code];   // remember for 撤销 + 改动报告
+        const entry = ensureEntry(props.node);
+        entry.edits[code].applied = editValues[code];   // remember for 撤销 + 改动报告 + 导出
         emit('edit-applied');
       } catch (e) {
         emit('error', `编辑失败: ${e.message}`);
@@ -298,9 +318,11 @@ const ViewDetails = defineComponent({
 
     async function undoEdit(code) {
       try {
-        await _send(code, baseline[code]);
-        delete appliedValue[code];
-        editValues[code] = baseline[code];
+        const entry = ensureEntry(props.node);
+        const base = entry.edits[code].baseline;
+        await _send(code, base);
+        entry.edits[code].applied = null;
+        editValues[code] = base;
         emit('edit-applied');
       } catch (e) {
         emit('error', `撤销失败: ${e.message}`);
@@ -309,9 +331,13 @@ const ViewDetails = defineComponent({
 
     function buildChangesReport() {
       const lines = ['# Changes Applied', ''];
-      for (const f of EDIT_FIELDS) {
-        if (appliedValue[f.code] === undefined) continue;
-        lines.push(`- ${f.label} (${f.code}): \`${baseline[f.code]}\` → \`${appliedValue[f.code]}\``);
+      const entry = currentEntry.value;
+      if (entry) {
+        for (const f of EDIT_FIELDS) {
+          const e = entry.edits[f.code];
+          if (!e || e.applied == null) continue;
+          lines.push(`- ${f.label} (${f.code}): \`${e.baseline}\` → \`${e.applied}\``);
+        }
       }
       lines.push('', buildElementReport());
       return lines.join('\n');
@@ -389,7 +415,7 @@ const ViewDetails = defineComponent({
             h('button', {
               class: ['px-2 py-1 rounded text-xs w-12 shrink-0',
                       wasApplied(f.code) ? 'bg-orange-500 text-white' : 'invisible'],
-              title: wasApplied(f.code) ? `还原成最初的 \`${baseline[f.code]}\`` : '',
+              title: wasApplied(f.code) ? `还原成最初的 \`${currentEntry.value?.edits[f.code]?.baseline}\`` : '',
               disabled: !wasApplied(f.code),
               onClick: () => undoEdit(f.code),
             }, '撤销'),
@@ -426,6 +452,9 @@ createApp({
     const error = ref(null);
     const loading = ref(false);
     const schemaInput = ref('');
+    // Session-wide edit state, lifted out of <view-details> so it survives node
+    // switches and feeds the 📥 HTML snapshot export. Keyed by mem_addr.
+    const sessionEdits = reactive({});
     const canvasRef = ref(null);
     const canvasWrapRef = ref(null);
     const hover = ref(null);
@@ -780,14 +809,67 @@ createApp({
       a.click();
     }
 
+    // Build a self-contained HTML viewer of the current screenshot + layout +
+    // every applied edit accumulated this session. Receivers open the file in
+    // a browser and can click/hover the screenshot to inspect views, no ADB
+    // connection required.
+    async function exportHtmlSnapshot() {
+      if (!snapshot.value) {
+        error.value = '没有可导出的快照，请先刷新';
+        return;
+      }
+      const edits = [];
+      for (const [addr, entry] of Object.entries(sessionEdits)) {
+        const changes = [];
+        for (const [code, e] of Object.entries(entry.edits)) {
+          if (e.applied == null) continue;
+          changes.push({ code, label: e.label, baseline: e.baseline, applied: e.applied });
+        }
+        if (changes.length === 0) continue;
+        edits.push({
+          mem_addr: addr,
+          class_name: entry.class_name,
+          id_str: entry.id_str,
+          bounds: entry.bounds,
+          changes,
+        });
+      }
+      const data = {
+        exported_at: new Date().toISOString(),
+        device_serial: device.value,
+        activity: snapshot.value.activity,
+        device_size: snapshot.value.device_size,
+        density: snapshot.value.density,
+        screenshot_png_b64: snapshot.value.screenshot_png_b64,
+        layout: snapshot.value.layout,
+        session_edits: edits,
+      };
+      try {
+        const tmpl = await (await fetch('/snapshot_template.html')).text();
+        // Escape any literal "</script>" inside JSON strings (e.g. view text)
+        // so the injected blob can't terminate the surrounding <script> early.
+        const json = JSON.stringify(data).replace(/<\/script/gi, '<\\/script');
+        const tag = `<script>window.__AIDB_DATA__=${json};</script>\n`;
+        const out = tmpl.replace('</head>', tag + '</head>');
+        const blob = new Blob([out], { type: 'text/html;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = `aidb-snapshot-${ts}.html`;
+        a.click();
+      } catch (e) {
+        error.value = `导出 HTML 失败: ${e.message}`;
+      }
+    }
+
     onMounted(refresh);   // auto-fetch snapshot on page load
 
     return {
       devices, device, snapshot, selected, search, error, loading,
       schemaInput, canvasRef, canvasWrapRef, hover, hasLayout,
-      leftW, rightW, zoom,
+      leftW, rightW, zoom, sessionEdits,
       refresh, onCanvasMove, onCanvasLeave, onCanvasClick, onCanvasWheel,
-      onPickFromTree, sendSchema, exportLayoutJson,
+      onPickFromTree, sendSchema, exportLayoutJson, exportHtmlSnapshot,
       startResize, resetZoom,
     };
   },
