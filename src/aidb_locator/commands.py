@@ -156,10 +156,17 @@ class NativeAdb:
     def screenshot(self, output: str | Path | None = None) -> Path:
         """Take a full-screen screenshot."""
         remote = "/sdcard/aidb_screenshot.png"
-        self._adb.shell(f"screencap -p {remote}")
         if output is None:
             output = Path(tempfile.mktemp(suffix=".png"))
-        local = self._adb.pull(remote, Path(output))
+        output = Path(output)
+        try:
+            self._adb.shell(f"screencap -p {remote}")
+        except AdbError as original:
+            try:
+                return self._adb.emulator_screenshot(output)
+            except AdbError:
+                raise original
+        local = self._adb.pull(remote, output)
         if _png_is_fully_transparent(local):
             try:
                 return self._adb.emulator_screenshot(local)
