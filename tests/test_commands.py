@@ -7,7 +7,7 @@ import zlib
 from unittest.mock import MagicMock
 
 from aidb_locator.commands import CodeLocator, NativeAdb
-from aidb_locator.adb import AdbClient
+from aidb_locator.adb import AdbClient, AdbError
 from aidb_locator.models import WApplication
 
 
@@ -116,6 +116,40 @@ class TestEditView:
 
 
 class TestNativeScreenshot:
+    def test_screenshot_falls_back_when_screencap_times_out(self, tmp_path):
+        fallback = _rgba_png(1, 1, bytes([255, 0, 0, 255]))
+        output = tmp_path / "shot.png"
+        mock_adb = MagicMock(spec=AdbClient)
+        mock_adb.shell.side_effect = AdbError("ADB command timed out")
+
+        def fake_emulator_screenshot(local):
+            local.write_bytes(fallback)
+            return local
+
+        mock_adb.emulator_screenshot.side_effect = fake_emulator_screenshot
+
+        result = NativeAdb(mock_adb).screenshot(output)
+
+        assert result == output
+        assert output.read_bytes() == fallback
+        mock_adb.pull.assert_not_called()
+        mock_adb.emulator_screenshot.assert_called_once_with(output)
+
+    def test_screenshot_reraises_screencap_error_when_emulator_fallback_fails(self, tmp_path):
+        output = tmp_path / "shot.png"
+        mock_adb = MagicMock(spec=AdbClient)
+        mock_adb.shell.side_effect = AdbError("ADB command timed out")
+        mock_adb.emulator_screenshot.side_effect = AdbError("not an emulator")
+
+        try:
+            NativeAdb(mock_adb).screenshot(output)
+            assert False, "Should have raised AdbError"
+        except AdbError as e:
+            assert "timed out" in str(e)
+
+        mock_adb.pull.assert_not_called()
+        mock_adb.emulator_screenshot.assert_called_once_with(output)
+
     def test_screenshot_falls_back_for_fully_transparent_png(self, tmp_path):
         transparent = _rgba_png(2, 1, bytes([0, 0, 0, 0, 0, 0, 0, 0]))
         fallback = _rgba_png(2, 1, bytes([255, 0, 0, 255, 0, 255, 0, 255]))
